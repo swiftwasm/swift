@@ -228,6 +228,8 @@ class HostSpecificConfiguration(object):
                 StdlibDeploymentTarget.AppleWatchSimulator)
         if not args.build_android:
             platforms_to_skip_build.add(StdlibDeploymentTarget.Android)
+        if not args.build_wasm:
+            platforms_to_skip_build.add(StdlibDeploymentTarget.Wasm)
         return platforms_to_skip_build
 
     def __platforms_to_skip_test(self, args):
@@ -668,6 +670,8 @@ class BuildScriptInvocation(object):
             impl_args += ["--skip-build-watchos-simulator"]
         if not args.build_android:
             impl_args += ["--skip-build-android"]
+        if not args.build_wasm:
+            impl_args += ["--skip-build-wasm"]
 
         if not args.test and not args.long_test and not args.stress_test:
             impl_args += ["--skip-test-swift"]
@@ -710,6 +714,10 @@ class BuildScriptInvocation(object):
             impl_args += ["--skip-test-android"]
         if not args.test_android_host:
             impl_args += ["--skip-test-android-host"]
+        if not args.test_wasm:
+            impl_args += ["--skip-test-wasm"]
+        if not args.test_wasm_host:
+            impl_args += ["--skip-test-wasm-host"]
         if args.build_runtime_with_host_compiler:
             impl_args += ["--build-runtime-with-host-compiler"]
         if args.validation_test:
