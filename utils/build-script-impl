@@ -127,6 +127,7 @@ KNOWN_SETTINGS=(
     skip-build-watchos-device   ""               "set to skip building Swift stdlibs for Apple watchOS devices (i.e. build simulators only)"
     skip-build-watchos-simulator ""              "set to skip building Swift stdlibs for Apple watchOS simulators (i.e. build devices only)"
     skip-build-android          ""               "set to skip building Swift stdlibs for Android"
+    skip-build-wasm             ""               "set to skip building Swift stdlibs for WebAssembly"
     skip-build-lldb             ""               "set to skip building LLDB"
     skip-build-llbuild          ""               "set to skip building llbuild"
     skip-build-libcxx           ""               "set to skip building libcxx"
@@ -168,6 +169,8 @@ KNOWN_SETTINGS=(
     skip-test-watchos-host      ""               "set to skip testing the host parts of the watchOS toolchain"
     skip-test-android           ""               "set to skip testing Swift stdlibs for Android"
     skip-test-android-host      ""               "set to skip testing the host parts of the Android toolchain"
+    skip-test-wasm              ""               "set to skip testing Swift stdlibs for WebAssembly"
+    skip-test-wasm-host         ""               "set to skip testing the host parts of the WebAssembly toolchain"
     validation-test             "0"              "set to run the validation test suite"
     long-test                   "0"              "set to run the long test suite"
     stress-test                 "0"              "set to run the stress test suite"
@@ -449,6 +452,13 @@ function set_build_options_for_host() {
             SWIFT_HOST_VARIANT="haiku"
             SWIFT_HOST_VARIANT_SDK="HAIKU"
             SWIFT_HOST_VARIANT_ARCH="x86_64"
+            ;;
+        wasm-wasm32)
+            SWIFT_HOST_VARIANT="wasm"
+            SWIFT_HOST_VARIANT_SDK="WASM"
+            SWIFT_HOST_VARIANT_ARCH="wasm32"
+            SWIFT_HOST_TRIPLE="wasm32-unknown-unknown-wasm"
+            llvm_target_arch="WASM"
             ;;
         linux-*)
             SWIFT_HOST_VARIANT="linux"
@@ -1440,6 +1450,15 @@ function calculate_targets_for_host() {
                     test_host_only=1
                 else
                     test_this_target=$(not ${SKIP_TEST_ANDROID})
+                fi
+                ;;
+            wasm-*)
+                swift_sdk="WASM"
+                build_for_this_target=$(not ${SKIP_BUILD_WASM})
+                if [[ ! "${SKIP_TEST_WASM_HOST}" ]] ; then
+                    test_host_only=1
+                else
+                    test_this_target=$(not ${SKIP_TEST_WASM})
                 fi
                 ;;
             *)
