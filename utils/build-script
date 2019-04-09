@@ -266,6 +266,8 @@ class HostSpecificConfiguration(object):
                 StdlibDeploymentTarget.AppleWatchSimulator)
         if not args.test_android:
             platforms_to_skip_test.add(StdlibDeploymentTarget.Android)
+        if not args.test_wasm:
+            platforms_to_skip_test.add(StdlibDeploymentTarget.Wasm)
 
         return platforms_to_skip_test
 
@@ -286,6 +288,8 @@ class HostSpecificConfiguration(object):
             platforms_to_skip_test_host.add(StdlibDeploymentTarget.AppleTV)
         if not args.test_watchos_host:
             platforms_to_skip_test_host.add(StdlibDeploymentTarget.AppleWatch)
+        if not args.test_wasm_host:
+            platforms_to_skip_test_host.add(StdlibDeploymentTarget.Android)
         return platforms_to_skip_test_host
 
 
@@ -398,6 +402,9 @@ class BuildScriptInvocation(object):
             elif args.android_arch == "aarch64":
                 args.stdlib_deployment_targets.append(
                     StdlibDeploymentTarget.Android.aarch64.name)
+        if args.wasm:
+            args.stdlib_deployment_targets.append(
+                StdlibDeploymentTarget.Wasm.wasm32.name)
 
         # Infer platform flags from manually-specified configure targets.
         # This doesn't apply to Darwin platforms, as they are
