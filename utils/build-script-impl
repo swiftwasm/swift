@@ -258,6 +258,12 @@ KNOWN_SETTINGS=(
     android-icu-data                   ""        "Path to libicudata.so"
     android-deploy-device-path         ""        "Path on an Android device to which built Swift stdlib products will be deployed"
     android-arch                       "armv7"   "The Android target architecture when building for Android"
+    wasm-emscripten                    ""        "An absolute path to the Emscripten that will be used as a libc implementation for Wasm builds"
+    wasm-icu-uc                        ""        "Path to libicuuc.so"
+    wasm-icu-uc-include                ""        "Path to a directory containing headers for libicuuc"
+    wasm-icu-i18n                      ""        "Path to libicui18n.so"
+    wasm-icu-i18n-include              ""        "Path to a directory containing headers libicui18n"
+    wasm-icu-data                      ""        "Path to libicudata.so"
     check-args-only                    ""        "set to check all arguments are known. Exit with status 0 if success, non zero otherwise"
     common-cmake-options               ""        "CMake options used for all targets, including LLVM/Clang"
     cmark-cmake-options                ""        "CMake options used for all cmark targets"
@@ -2280,6 +2286,18 @@ for host in "${ALL_HOSTS[@]}"; do
                         -DSWIFT_ANDROID_${ANDROID_ARCH}_ICU_DATA:STRING="${ANDROID_ICU_DATA}"
                         -DSWIFT_ANDROID_DEPLOY_DEVICE_PATH:STRING="${ANDROID_DEPLOY_DEVICE_PATH}"
                         -DSWIFT_SDK_ANDROID_ARCHITECTURES:STRING="${ANDROID_ARCH}"
+                    )
+                fi
+
+                if [[ ! "${SKIP_BUILD_WASM}" ]]; then
+                    cmake_options=(
+                        "${cmake_options[@]}"
+                        -DSWIFT_WASM_EMSCRIPTEN_PATH:STRING="${WASM_EMSCRIPTEN}"
+                        -DSWIFT_WASM_ICU_UC:STRING="${WASM_ICU_UC}"
+                        -DSWIFT_WASM_ICU_UC_INCLUDE:STRING="${WASM_ICU_UC_INCLUDE}"
+                        -DSWIFT_WASM_ICU_I18N:STRING="${WASM_ICU_I18N}"
+                        -DSWIFT_WASM_ICU_I18N_INCLUDE:STRING="${WASM_ICU_I18N_INCLUDE}"
+                        -DSWIFT_WASM_ICU_DATA:STRING="${WASM_ICU_DATA}"
                     )
                 fi
 
