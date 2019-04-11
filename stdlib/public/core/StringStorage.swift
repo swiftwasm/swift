@@ -129,7 +129,7 @@ extension _AbstractStringStorage {
     case .shared:
       return _nativeIsEqual(
         _unsafeUncheckedDowncast(other, to: __SharedStringStorage.self))
-#if !(arch(i386) || arch(arm))
+#if !(arch(i386) || arch(arm) || arch(wasm32))
     case .tagged:
       fallthrough
 #endif
@@ -176,7 +176,7 @@ private typealias CountAndFlags = _StringObject.CountAndFlags
 // renamed. The old name must not be used in the new runtime.
 final internal class __StringStorage
   : __SwiftNativeNSString, _AbstractStringStorage {
-#if arch(i386) || arch(arm)
+#if arch(i386) || arch(arm) || arch(wasm32)
   // The total allocated storage capacity. Note that this includes the required
   // nul-terminator.
   internal var _realCapacity: Int
@@ -328,7 +328,7 @@ final internal class __StringStorage
 // for Strings ~1KB or larger, though at this point we're well into our growth
 // curve.
 private func determineCodeUnitCapacity(_ desiredCapacity: Int) -> Int {
-#if arch(i386) || arch(arm)
+#if arch(i386) || arch(arm) || arch(wasm32)
   // FIXME: Adapt to actual 32-bit allocator. For now, let's arrange things so
   // that the instance size will be a multiple of 4.
   let bias = Int(bitPattern: _StringObject.nativeBias)
@@ -361,7 +361,7 @@ extension __StringStorage {
       __StringStorage.self,
       realCodeUnitCapacity._builtinWordValue, UInt8.self,
       1._builtinWordValue, Optional<_StringBreadcrumbs>.self)
-#if arch(i386) || arch(arm)
+#if arch(i386) || arch(arm) || arch(wasm32)
     storage._realCapacity = realCodeUnitCapacity
     storage._count = countAndFlags.count
     storage._flags = countAndFlags.flags
@@ -513,7 +513,7 @@ extension __StringStorage {
   private func _postRRCAdjust(newCount: Int, newIsASCII: Bool) {
     let countAndFlags = CountAndFlags(
       mortalCount: newCount, isASCII: newIsASCII)
-#if arch(i386) || arch(arm)
+#if arch(i386) || arch(arm) || arch(wasm32)
     self._count = countAndFlags.count
     self._flags = countAndFlags.flags
 #else
@@ -657,7 +657,7 @@ final internal class __SharedStringStorage
   internal var _owner: AnyObject?
   internal var start: UnsafePointer<UInt8>
 
-#if arch(i386) || arch(arm)
+#if arch(i386) || arch(arm) || arch(wasm32)
   internal var _count: Int
   internal var _flags: UInt16
 
@@ -679,7 +679,7 @@ final internal class __SharedStringStorage
   ) {
     self._owner = nil
     self.start = ptr
-#if arch(i386) || arch(arm)
+#if arch(i386) || arch(arm) || arch(wasm32)
     self._count = countAndFlags.count
     self._flags = countAndFlags.flags
 #else
