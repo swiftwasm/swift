@@ -19,7 +19,8 @@
 #ifndef SWIFT_RUNTIME_IMAGEINSPECTIONELF_H
 #define SWIFT_RUNTIME_IMAGEINSPECTIONELF_H
 
-#if defined(__ELF__) || defined(__EMSCRIPTEN__)
+// WebAssembly: hack: incorrect; Wasm needs its own implementation
+#if defined(__ELF__) || defined(__wasm__)
 
 #include "../SwiftShims/Visibility.h"
 #include <cstdint>
