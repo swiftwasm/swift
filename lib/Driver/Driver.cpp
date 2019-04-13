@@ -286,7 +286,7 @@ Driver::buildToolChain(const llvm::opt::InputArgList &ArgList) {
   case llvm::Triple::Haiku:
     return llvm::make_unique<toolchains::GenericUnix>(*this, target);
   case llvm::Triple::UnknownOS:
-    // newer LLVM actually has an OS value for Emscripten; should we use it?
+    // WebAssembly: hack: WASI isn't defined in this LLVM version yet
     if (target.isOSBinFormatWasm())
       return llvm::make_unique<toolchains::GenericUnix>(*this, target);
     LLVM_FALLTHROUGH;
