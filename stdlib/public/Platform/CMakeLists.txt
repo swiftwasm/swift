@@ -33,7 +33,7 @@ add_swift_target_library(swiftGlibc ${SWIFT_STDLIB_LIBRARY_BUILD_TYPES} IS_SDK_O
 
     SWIFT_COMPILE_FLAGS "${SWIFT_RUNTIME_SWIFT_COMPILE_FLAGS}"
     LINK_FLAGS "${SWIFT_RUNTIME_SWIFT_LINK_FLAGS}"
-    TARGET_SDKS ANDROID CYGWIN FREEBSD LINUX HAIKU
+    TARGET_SDKS ANDROID CYGWIN FREEBSD LINUX HAIKU WASM
     DEPENDS glibc_modulemap)
 
 add_swift_target_library(swiftMSVCRT ${SWIFT_STDLIB_LIBRARY_BUILD_TYPES} IS_SDK_OVERLAY
@@ -54,7 +54,8 @@ foreach(sdk ${SWIFT_SDKS})
      NOT "${sdk}" STREQUAL "FREEBSD" AND
      NOT "${sdk}" STREQUAL "ANDROID" AND
      NOT "${sdk}" STREQUAL "CYGWIN" AND
-     NOT "${sdk}" STREQUAL "HAIKU")
+     NOT "${sdk}" STREQUAL "HAIKU" AND
+     NOT "${sdk}" STREQUAL "WASM")
     continue()
   endif()
 
@@ -71,6 +72,9 @@ foreach(sdk ${SWIFT_SDKS})
     elseif("${sdk}" STREQUAL "ANDROID")
       set(GLIBC_SYSROOT_RELATIVE_INCLUDE_PATH "${SWIFT_ANDROID_NDK_PATH}/sysroot/usr/include")
       set(GLIBC_SYSROOT_RELATIVE_ARCH_INCLUDE_PATH "${SWIFT_ANDROID_NDK_PATH}/sysroot/usr/include")
+    elseif("${sdk}" STREQUAL "WASM")
+      set(GLIBC_SYSROOT_RELATIVE_INCLUDE_PATH "/include")
+      set(GLIBC_SYSROOT_RELATIVE_ARCH_INCLUDE_PATH "${GLIBC_SYSROOT_RELATIVE_INCLUDE_PATH}")
     else()
       # Determine the location of glibc headers based on the target.
       set(GLIBC_SYSROOT_RELATIVE_INCLUDE_PATH "/usr/include")
