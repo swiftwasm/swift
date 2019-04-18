@@ -152,10 +152,7 @@ swift::getIRTargetOptions(IRGenOptions &Opts, ASTContext &Ctx) {
 
   // Explicitly request debugger tuning for LLDB which is the default
   // on Darwin platforms but not on others.
-  // WebAssembly HACK: -glldb on WebAssembly crashes LLVM because it doesn't create a debug_names section
-  // TargetOpts.DebuggerTuning = llvm::DebuggerKind::LLDB;
-  // WebAssembly HACK: disable atomics
-  TargetOpts.ThreadModel = llvm::ThreadModel::Single;
+  TargetOpts.DebuggerTuning = llvm::DebuggerKind::LLDB;
 
   auto *Clang = static_cast<ClangImporter *>(Ctx.getClangModuleLoader());
   clang::TargetOptions &ClangOpts = Clang->getTargetInfo().getTargetOpts();
