@@ -79,6 +79,7 @@ endif(LLVM_ENABLE_ASSERTIONS)
 set(LLVM_OPTIONAL_SOURCES
     SwiftRT-COFF.cpp
     SwiftRT-ELF.cpp
+    SwiftRT-WASM.cpp
     ${swift_runtime_sources}
     ${swift_runtime_objc_sources}
     ${swift_runtime_leaks_sources})
