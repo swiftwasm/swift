@@ -327,7 +327,7 @@ macro(configure_sdk_unix name architectures)
         # fixme: Wasi is wasm32-unknown-wasi-musl. This LLVM doesn't have it yet.
         set(SWIFT_SDK_WASM_ARCH_wasm32_TRIPLE "wasm32-unknown-unknown-wasm")
         set(SWIFT_SDK_WASM_ARCH_wasm32_LIBC_INCLUDE_DIRECTORY "${SWIFT_WASM_WASI_SDK_PATH}/share/sysroot/include")
-        set(SWIFT_SDK_WASM_ARCH_wasm32_LIBC_ARCHITECTURE_INCLUDE_DIRECTORY "${SWIFT_WASM_WASI_SDK_PATH}/sysroot/include")
+        set(SWIFT_SDK_WASM_ARCH_wasm32_LIBC_ARCHITECTURE_INCLUDE_DIRECTORY "${SWIFT_WASM_WASI_SDK_PATH}/share/sysroot/include")
       else()
         message(FATAL_ERROR "unknown Unix OS: ${prefix}")
       endif()
