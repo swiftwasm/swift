@@ -24,6 +24,7 @@ jobs:
           systemtap-sdt-dev tzdata rsync
 
         ./utils/update-checkout --clone --scheme wasm
+        git checkout $GITHUB_SHA
         export sourcedir=$PWD/..
         cd $sourcedir
 
@@ -75,6 +76,7 @@ jobs:
       run: |
         brew install cmake ninja
         ./utils/update-checkout --clone --scheme wasm
+        git checkout $GITHUB_SHA
         export sourcedir=$PWD/..
         cd $sourcedir
         wget -O wasi-sdk.tar.gz https://github.com/swiftwasm/wasi-sdk/releases/download/20190421.6/wasi-sdk-3.19gefb17cb478f9.m-linux.tar.gz
