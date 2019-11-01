@@ -88,7 +88,7 @@ set(swift_runtime_library_compile_flags ${swift_runtime_compile_flags})
 list(APPEND swift_runtime_library_compile_flags -DswiftCore_EXPORTS)
 list(APPEND swift_runtime_library_compile_flags -I${SWIFT_SOURCE_DIR}/include)
 
-set(sdk "${SWIFT_HOST_VARIANT_SDK}")
+set(sdk "${SWIFT_PRIMARY_VARIANT_SDK}")
 if(SWIFT_BUILD_STATIC_STDLIB AND "${sdk}" STREQUAL "LINUX")
   list(REMOVE_ITEM swift_runtime_sources ImageInspectionELF.cpp)
   set(static_binary_lnk_file_list)
