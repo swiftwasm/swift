@@ -50,20 +50,20 @@ jobs:
             -DSWIFT_BUILD_SOURCEKIT=FALSE \
             -DSWIFT_ENABLE_SOURCEKIT_TESTS=FALSE \
           " \
+          --build-stdlib-deployment-targets "wasm-wasm32" \
+          --build-swift-static-stdlib \
+          --install-destdir="$sourcedir/install" \
+          --install-prefix="/opt/swiftwasm-sdk" \
+          --install-swift \
+          --installable-package="$sourcedir/swiftwasm.tar.gz" \
           --llvm-targets-to-build "X86;WebAssembly" \
           --stdlib-deployment-targets "wasm-wasm32" \
-          --build-stdlib-deployment-targets "wasm-wasm32" \
-          --wasm-wasi-sdk "$sourcedir/wasi-sdk" \
-          --wasm-icu-uc "$sourcedir/icu_out/lib" \
-          --wasm-icu-uc-include "$sourcedir/icu_out/include" \
+          --wasm-icu-data "todo-icu-data" \
           --wasm-icu-i18n "$sourcedir/icu_out/lib" \
           --wasm-icu-i18n-include "$sourcedir/icu_out/include" \
-          --wasm-icu-data "todo-icu-data" \
-          --build-swift-static-stdlib \
-          --install-swift \
-          --install-prefix="/opt/swiftwasm-sdk" \
-          --install-destdir="$sourcedir/install" \
-          --installable-package="$sourcedir/swiftwasm.tar.gz"
+          --wasm-icu-uc "$sourcedir/icu_out/lib" \
+          --wasm-icu-uc-include "$sourcedir/icu_out/include" \
+          --wasm-wasi-sdk "$sourcedir/wasi-sdk"
 
   macos_build:
     timeout-minutes: 0
@@ -97,15 +97,15 @@ jobs:
             -DSWIFT_BUILD_SOURCEKIT=FALSE \
             -DSWIFT_ENABLE_SOURCEKIT_TESTS=FALSE \
           " \
-          --stdlib-deployment-targets "wasm-wasm32" \
           --build-stdlib-deployment-targets "wasm-wasm32" \
-          --llvm-targets-to-build "X86;WebAssembly" \
           --build-swift-dynamic-sdk-overlay false \
           --build-swift-static-sdk-overlay false \
-          --wasm-wasi-sdk "$sourcedir/wasi-sdk" \
-          --wasm-icu-uc "$sourcedir/icu_out/lib" \
-          --wasm-icu-uc-include "$sourcedir/icu_out/include" \
+          --build-swift-static-stdlib \
+          --llvm-targets-to-build "X86;WebAssembly" \
+          --stdlib-deployment-targets "wasm-wasm32" \
+          --wasm-icu-data "todo-icu-data" \
           --wasm-icu-i18n "$sourcedir/icu_out/lib" \
           --wasm-icu-i18n-include "$sourcedir/icu_out/include" \
-          --wasm-icu-data "todo-icu-data" \
-          --build-swift-static-stdlib
+          --wasm-icu-uc "$sourcedir/icu_out/lib" \
+          --wasm-icu-uc-include "$sourcedir/icu_out/include" \
+          --wasm-wasi-sdk "$sourcedir/wasi-sdk"
