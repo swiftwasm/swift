@@ -48,7 +48,6 @@ jobs:
           --extra-cmake-options=" \
             -DSWIFT_PRIMARY_VARIANT_SDK:STRING=WASM \
             -DSWIFT_PRIMARY_VARIANT_ARCH:STRING=wasm32 \
-            -DSWIFT_OSX_x86_64_ICU_STATICLIB=TRUE \
             -DSWIFT_BUILD_SOURCEKIT=FALSE \
             -DSWIFT_ENABLE_SOURCEKIT_TESTS=FALSE \
           " \
