@@ -46,17 +46,17 @@ jobs:
         utils/build-script --release --wasm --verbose \
           --skip-build-benchmarks \
           --extra-cmake-options=" \
-            -DSWIFT_PRIMARY_VARIANT_SDK:STRING=WASM \
-            -DSWIFT_PRIMARY_VARIANT_ARCH:STRING=wasm32 \
+            -DSWIFT_SDKS='WASM;LINUX' \
             -DSWIFT_BUILD_SOURCEKIT=FALSE \
             -DSWIFT_ENABLE_SOURCEKIT_TESTS=FALSE \
           " \
           --llvm-targets-to-build "X86;WebAssembly" \
+          --stdlib-deployment-targets "wasm-wasm32" \
           --build-stdlib-deployment-targets "wasm-wasm32" \
           --wasm-wasi-sdk "$sourcedir/wasi-sdk" \
-          --wasm-icu-uc "$sourcedir/icu_out/lib/libicuuc.a" \
+          --wasm-icu-uc "$sourcedir/icu_out/lib" \
           --wasm-icu-uc-include "$sourcedir/icu_out/include" \
-          --wasm-icu-i18n "$sourcedir/icu_out/lib/libicui18n.a" \
+          --wasm-icu-i18n "$sourcedir/icu_out/lib" \
           --wasm-icu-i18n-include "$sourcedir/icu_out/include" \
           --wasm-icu-data "todo-icu-data" \
           --build-swift-static-stdlib \
@@ -103,9 +103,9 @@ jobs:
           --build-swift-dynamic-sdk-overlay false \
           --build-swift-static-sdk-overlay false \
           --wasm-wasi-sdk "$sourcedir/wasi-sdk" \
-          --wasm-icu-uc "$sourcedir/icu_out/lib/libicuuc.a" \
+          --wasm-icu-uc "$sourcedir/icu_out/lib" \
           --wasm-icu-uc-include "$sourcedir/icu_out/include" \
-          --wasm-icu-i18n "$sourcedir/icu_out/lib/libicui18n.a" \
+          --wasm-icu-i18n "$sourcedir/icu_out/lib" \
           --wasm-icu-i18n-include "$sourcedir/icu_out/include" \
           --wasm-icu-data "todo-icu-data" \
           --build-swift-static-stdlib
