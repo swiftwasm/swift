@@ -1,6 +1,5 @@
 #/bin/bash
 
-cd swift
 ./utils/build-script --release --wasm --verbose \
   --skip-build-benchmarks \
   --extra-cmake-options=" \
@@ -24,4 +23,3 @@ cd swift
   --wasm-icu-uc "$sourcedir/icu_out/lib" \
   --wasm-icu-uc-include "$sourcedir/icu_out/include" \
   --wasm-wasi-sdk "$sourcedir/wasi-sdk"
-cd ..

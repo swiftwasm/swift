@@ -16,4 +16,5 @@ ln -s ../include wasi-sdk/share/sysroot/usr/include
 wget -O icu.tar.xz "https://github.com/swiftwasm/icu4c-wasi/releases/download/20190421.3/icu4c-wasi.tar.xz"
 tar xf icu.tar.xz
 
+cd swift
 ./build-mac.sh
