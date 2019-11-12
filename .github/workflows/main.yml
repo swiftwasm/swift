@@ -16,7 +16,7 @@ jobs:
     steps:
     - uses: actions/checkout@v1
     - name: Run a multi-line script
-      run: ./build-linux.sh
+      run: ./ci-linux.sh
 
   macos_build:
     timeout-minutes: 0
@@ -25,4 +25,4 @@ jobs:
     steps:
     - uses: actions/checkout@v1
     - name: Run a multi-line script
-      run: ./build-mac.sh
+      run: ./ci-mac.sh
