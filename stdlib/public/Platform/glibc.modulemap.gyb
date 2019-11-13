@@ -519,10 +519,12 @@ module SwiftGlibc [system] {
       export *
     }
 % end
+% if CMAKE_SDK != "WASM":
     module termios {
       header "${GLIBC_INCLUDE_PATH}/termios.h"
       export *
     }
+% end
     module unistd {
       header "${GLIBC_INCLUDE_PATH}/unistd.h"
       export *
