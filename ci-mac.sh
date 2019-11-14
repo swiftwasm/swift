@@ -19,3 +19,13 @@ tar xf icu.tar.xz
 
 cd swift
 ./build-mac.sh
+./prepare-package.sh
+
+cd ../swiftwasm-package-sdk
+cp ../swiftwasm-mac.tar.gz prebuilt
+./build-mac-package.sh
+cd output
+tar xf swiftwasm-sdk-macos.tar.xz
+
+cd swiftwasm-sdk
+./swiftwasm example/hello.swift hello.wasm
