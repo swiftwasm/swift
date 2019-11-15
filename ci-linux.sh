@@ -32,13 +32,3 @@ tar xf icu.tar.xz
 
 cd swift
 ./build-linux.sh
-./prepare-package.sh
-
-cd ../swiftwasm-package-sdk
-cp ../swiftwasm.tar.gz prebuilt
-./build-linux-package.sh
-cd output
-tar xf swiftwasm-sdk-linux.tar.xz
-
-cd swiftwasm-sdk
-./swiftwasm example/hello.swift hello.wasm

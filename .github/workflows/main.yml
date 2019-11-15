@@ -59,3 +59,7 @@ jobs:
           cp linux-installable/swiftwasm-linux.tar.gz swiftwasm-package-sdk/prebuilt/swiftwasm.tar.gz
           cp macos-installable/swiftwasm-mac.tar.gz swiftwasm-package-sdk/prebuilt/swiftwasm-mac.tar.gz
           cd swiftwasm-package-sdk && ./build-packages.sh
+          cd output
+          tar xf swiftwasm-sdk-linux.tar.xz
+          cd swiftwasm-sdk
+          ./swiftwasm example/hello.swift hello.wasm
