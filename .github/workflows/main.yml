@@ -15,8 +15,13 @@ jobs:
 
     steps:
     - uses: actions/checkout@v1
-    - name: Run a multi-line script
+    - name: Build Linux installable archive
       run: ./ci-linux.sh
+    - name: Upload Linux installable archive
+      uses: actions/upload-artifact@v1
+      with:
+        name: linux-installable
+        path: ../swiftwasm-linux.tar.gz
 
   macos_build:
     timeout-minutes: 0
@@ -24,5 +29,33 @@ jobs:
 
     steps:
     - uses: actions/checkout@v1
-    - name: Run a multi-line script
+    - name: Build macOS installable archive
       run: ./ci-mac.sh
+    - name: Upload macOS installable archive
+      uses: actions/upload-artifact@v1
+      with:
+        name: macos-installable
+        path: ../swiftwasm-mac.tar.gz
+
+  package:
+    name: Build SwiftWasm packages
+    needs:
+    - linux_build
+    - macos_build
+    runs-on: ubuntu-18.04
+    steps:
+      - name: Download installable Linux archive
+        uses: actions/download-artifact@v1
+        with:
+          name: linux-installable
+      - name: Download installable macOS archive
+        uses: actions/download-artifact@v1
+        with:
+          name: macos-installable
+      - name: Build the packages
+        shell: bash
+        run: |
+          ./prepare-package.sh
+          cp linux-installable/swiftwasm-linux.tar.gz swiftwasm-package-sdk/prebuilt/swiftwasm.tar.gz
+          cp macos-installable/swiftwasm-mac.tar.gz swiftwasm-package-sdk/prebuilt/swiftwasm-mac.tar.gz
+          cd swiftwasm-package-sdk && ./build-packages.sh
