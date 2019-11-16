@@ -87,3 +87,28 @@ jobs:
         with:
           name: linux-hello.wasm
           path: swiftwasm-package-sdk/output/swiftwasm-sdk/hello.wasm
+
+  macos_smoke_test:
+    name: Compile hello.swift on macOS
+    runs-on: macOS-10.14
+    needs: package
+    steps:
+      - name: Download SwiftWasm macOS package
+        uses: actions/download-artifact@v1
+        with:
+          name: macos-package
+
+      - name: Build hello.wasm
+        shell: bash
+        run: |
+          cd macos-package
+          tar xf swiftwasm-sdk-macos.tar.xz && echo "Successfully unpacked macOS SDK"
+
+          cd swiftwasm-sdk
+          ./swiftwasm example/hello.swift hello.wasm && echo "Successfully linked hello.wasm"
+
+      - name: Upload hello.wasm compiled with macOS package
+        uses: actions/upload-artifact@v1
+        with:
+          name: macos-hello.wasm
+          path: macos-package/swiftwasm-sdk/hello.wasm
