@@ -64,7 +64,7 @@ jobs:
           ./build-packages.sh
 
           cd output
-          tar xf swiftwasm-sdk-linux.tar.xz
+          tar xf swiftwasm-sdk-linux.tar.xz && echo "Successfully unpacked Linux SDK"
 
           cd swiftwasm-sdk
-          ./swiftwasm example/hello.swift hello.wasm
+          ./swiftwasm example/hello.swift hello.wasm && echo "Successfully linked hello.wasm"
