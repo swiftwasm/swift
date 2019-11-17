@@ -40,7 +40,7 @@ jobs:
         uses: actions/upload-artifact@v1
         with:
           name: packaging-scripts
-          path: utils/wasm
+          path: utils/webassembly
 
   package:
     name: Build SwiftWasm packages
