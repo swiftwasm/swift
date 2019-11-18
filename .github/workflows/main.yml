@@ -66,6 +66,7 @@ jobs:
         run: |
           cd packaging-scripts
           find . -name '*.sh' -exec chmod +x {} \;
+          chmod +x sdkroot/swiftwasm
           ./download-prebuilts.sh
 
           cp ../linux-installable/swiftwasm-linux.tar.gz \
