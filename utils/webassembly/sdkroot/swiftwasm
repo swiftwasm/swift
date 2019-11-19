@@ -25,7 +25,6 @@ abssysroot="$(cd "$(dirname "$sysroot")" && pwd)/$(basename "$sysroot")"
 	"${@:1:$#-1}"
 "$sdk/wasi-sdk/bin/wasm-ld" --error-limit=0 -o "$outputfile" \
 	"$sysroot/lib/wasm32-wasi/crt1.o" \
-	"$sdk/extra_objs/swift_start.o" \
 	"$sdk/opt/swiftwasm-sdk/lib/swift_static/wasm/wasm32/swiftrt.o" \
 	"$tmpobj" \
 	"-L$sdk/opt/swiftwasm-sdk/lib/swift_static/wasm" \
@@ -36,7 +35,6 @@ abssysroot="$(cd "$(dirname "$sysroot")" && pwd)/$(basename "$sysroot")"
 	-licuuc -licudata \
 	"$sdk/wasi-sdk/lib/clang/9.0.0/lib/wasi/libclang_rt.builtins-wasm32.a" \
 	"$sdk/extra_objs/fakepthread.o" \
-	"$sdk/extra_objs/swift_end.o" \
 	--no-gc-sections \
 	--no-threads
 rm "$tmpobj"
