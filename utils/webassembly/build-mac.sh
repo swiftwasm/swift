@@ -1,6 +1,6 @@
 #/bin/bash
 
-SOURCE_PATH="$( cd "$(dirname $0)/../../.." && pwd  )" 
+SOURCE_PATH="$( cd "$(dirname $0)/../../.." && pwd )"
 SWIFT_PATH=$SOURCE_PATH/swift
 
 $SWIFT_PATH/utils/build-script --wasm \
