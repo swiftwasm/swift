@@ -2,10 +2,7 @@
 
 set -ex
 
-brew install cmake ninja llvm python@2
-
-# Install six for python3 migration
-pip2 install six
+brew install cmake ninja llvm
 
 SOURCE_PATH="$( cd "$(dirname $0)/../../.." && pwd  )" 
 SWIFT_PATH=$SOURCE_PATH/swift
