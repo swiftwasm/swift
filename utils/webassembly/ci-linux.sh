@@ -48,6 +48,5 @@ ln -s wasm32-wasi wasi-sdk/share/wasi-sysroot/lib/wasm32-wasi-unknown
 wget -O icu.tar.xz "https://github.com/swiftwasm/icu4c-wasi/releases/download/20190421.3/icu4c-wasi.tar.xz"
 tar xf icu.tar.xz
 
-$BUILD_SCRIPT --release --debug-swift-stdlib --verbose
 # Run test but ignore failure temporarily
 $BUILD_SCRIPT --release --debug-swift-stdlib --verbose -t || true
