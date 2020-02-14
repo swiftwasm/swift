@@ -2,6 +2,7 @@
 
 set -ex
 
+brew uninstall python@2 || true
 brew install cmake ninja llvm
 
 SOURCE_PATH="$( cd "$(dirname $0)/../../.." && pwd  )" 
