@@ -3,6 +3,7 @@
 set -ex
 
 export DEBIAN_FRONTEND=noninteractive
+export TZ=Europe/London
 
 sudo apt-get update
 sudo apt-get install -y \
