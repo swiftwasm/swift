@@ -11,7 +11,7 @@ sudo apt install -y \
   libblocksruntime-dev libcurl4-openssl-dev \
   systemtap-sdt-dev tzdata rsync wget llvm
 
-SOURCE_PATH="$( cd "$(dirname $0)/../../.." && pwd )" 
+SOURCE_PATH="$( cd "$(dirname $0)/../../../.." && pwd )" 
 SWIFT_PATH=$SOURCE_PATH/swift
 cd $SWIFT_PATH
 
