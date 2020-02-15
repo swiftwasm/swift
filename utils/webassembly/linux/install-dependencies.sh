@@ -9,7 +9,7 @@ sudo apt install -y \
   libedit-dev libxml2-dev libsqlite3-dev swig \
   libpython-dev libncurses5-dev pkg-config \
   libblocksruntime-dev libcurl4-openssl-dev \
-  systemtap-sdt-dev tzdata rsync wget llvm
+  systemtap-sdt-dev tzdata rsync wget llvm zip unzip
 
 SOURCE_PATH="$( cd "$(dirname $0)/../../../.." && pwd )" 
 SWIFT_PATH=$SOURCE_PATH/swift
