@@ -13,7 +13,6 @@ sudo apt install \
 
 SOURCE_PATH="$( cd "$(dirname $0)/../../.." && pwd )" 
 SWIFT_PATH=$SOURCE_PATH/swift
-BUILD_SCRIPT=$SWIFT_PATH/utils/webassembly/build-linux.sh
 cd $SWIFT_PATH
 
 ./utils/update-checkout --clone --scheme wasm --skip-repository swift
