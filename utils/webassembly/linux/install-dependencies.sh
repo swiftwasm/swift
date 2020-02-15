@@ -2,7 +2,7 @@
 
 set -ex
 
-sudo apt-get update -y
+sudo apt-get update
 sudo apt-get install -y \
   git ninja-build clang python python-six \
   uuid-dev libicu-dev icu-devtools libbsd-dev \
