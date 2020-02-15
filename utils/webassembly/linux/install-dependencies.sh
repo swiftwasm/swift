@@ -2,11 +2,8 @@
 
 set -ex
 
-export DEBIAN_FRONTEND=noninteractive
-export TZ=Europe/London
-
-sudo apt-get update
-sudo apt-get install -y \
+sudo apt update
+sudo apt install \
   git ninja-build clang python python-six \
   uuid-dev libicu-dev icu-devtools libbsd-dev \
   libedit-dev libxml2-dev libsqlite3-dev swig \
