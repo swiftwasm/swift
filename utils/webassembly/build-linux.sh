@@ -5,7 +5,7 @@ SWIFT_PATH=$SOURCE_PATH/swift
 
 $SWIFT_PATH/utils/build-script --wasm \
   --skip-build-benchmarks \
-  --foundation true \
+  --libdispatch true \
   --extra-cmake-options=" \
     -DSWIFT_PRIMARY_VARIANT_SDK:STRING=WASI \
     -DSWIFT_PRIMARY_VARIANT_ARCH:STRING=wasm32 \
