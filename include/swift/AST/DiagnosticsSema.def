@@ -706,6 +706,8 @@ ERROR(serialization_circular_dependency,Fatal,
       (StringRef, Identifier))
 ERROR(serialization_missing_underlying_module,Fatal,
       "cannot load underlying module for %0", (Identifier))
+NOTE(serialization_missing_underlying_module_sdk_path,none,
+      "looking for module at this SDK path: %0", (StringRef))
 ERROR(serialization_name_mismatch,Fatal,
       "cannot load module '%0' as '%1'", (StringRef, StringRef))
 ERROR(serialization_name_mismatch_repl,none,

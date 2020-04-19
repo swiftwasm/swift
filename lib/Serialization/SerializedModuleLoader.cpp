@@ -809,6 +809,10 @@ void swift::serialization::diagnoseSerializedASTLoadFailure(
         llvm::Triple(llvm::sys::getProcessTriple()).isMacOSX()) {
       Ctx.Diags.diagnose(SourceLoc(), diag::sema_no_import_no_sdk);
       Ctx.Diags.diagnose(SourceLoc(), diag::sema_no_import_no_sdk_xcrun);
+    } else {
+      Ctx.Diags.diagnose(SourceLoc(), 
+                         diag::serialization_missing_underlying_module_sdk_path,
+                         Ctx.SearchPathOpts.SDKPath);
     }
     break;
   }
