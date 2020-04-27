@@ -5,6 +5,7 @@ set -ex
 dpkg -l | grep gcc
 dpkg -l | grep libc
 
+sudo apt-get purge libgcc-9-dev gcc-9 
 sudo apt update
 sudo apt install -y \
   git ninja-build clang python python-six \
