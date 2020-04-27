@@ -2,6 +2,9 @@
 
 set -ex
 
+dpkg -l | grep gcc
+dpkg -l | grep libc
+
 sudo apt update
 sudo apt install -y \
   git ninja-build clang python python-six \
