@@ -4,6 +4,7 @@ set -ex
 
 dpkg -l | grep gcc
 dpkg -l | grep libc
+dpkg -l | grep libstdc
 
 sudo apt-get purge libgcc-9-dev gcc-9 
 sudo apt update
