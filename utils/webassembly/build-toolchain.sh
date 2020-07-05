@@ -64,8 +64,11 @@ cp -r $WASI_SDK_PATH/lib/clang usr/lib
 cp -a $WASI_SDK_PATH/bin/{*ld,llvm-ar} usr/bin
 cp -r $WASI_SDK_PATH/share/wasi-sysroot usr/share
 
-# Build SwiftPM and install it into toolchain
-$UTILS_PATH/build-swiftpm.sh $TMP_DIR/$TOOLCHAIN_NAME
+if [[ "$(uname)" == "Linux" ]]; then
+  # Build SwiftPM and install it into toolchain.
+  # On macOS it's built as a part of the preset.
+  $UTILS_PATH/build-swiftpm.sh $TMP_DIR/$TOOLCHAIN_NAME
+else
 
 # Replace absolute sysroot path with relative path
 sed -i -e "s@\".*/include@\"../../../../share/wasi-sysroot/include@g" $TMP_DIR/$TOOLCHAIN_NAME/usr/lib/swift/wasi/wasm32/glibc.modulemap
