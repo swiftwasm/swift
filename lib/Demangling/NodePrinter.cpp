@@ -454,6 +454,7 @@ private:
     case Node::Kind::PropertyDescriptor:
     case Node::Kind::ProtocolConformance:
     case Node::Kind::ProtocolConformanceDescriptor:
+    case Node::Kind::MetadataInstantiationCache:
     case Node::Kind::ProtocolDescriptor:
     case Node::Kind::ProtocolRequirementsBaseDescriptor:
     case Node::Kind::ProtocolSelfConformanceDescriptor:
@@ -548,6 +549,8 @@ private:
     case Node::Kind::OpaqueReturnTypeOf:
     case Node::Kind::CanonicalSpecializedGenericMetaclass:
     case Node::Kind::CanonicalSpecializedGenericTypeMetadataAccessFunction:
+    case Node::Kind::NoncanonicalSpecializedGenericTypeMetadata:
+    case Node::Kind::NoncanonicalSpecializedGenericTypeMetadataCache:
       return false;
     }
     printer_unreachable("bad node kind");
@@ -2431,6 +2434,18 @@ NodePointer NodePrinter::print(NodePointer Node, bool asPrefixContext) {
     return nullptr;
   case Node::Kind::CanonicalSpecializedGenericTypeMetadataAccessFunction:
     Printer << "canonical specialized generic type metadata accessor for ";
+    print(Node->getChild(0));
+    return nullptr;
+  case Node::Kind::MetadataInstantiationCache:
+    Printer << "metadata instantiation cache for ";
+    print(Node->getChild(0));
+    return nullptr;
+  case Node::Kind::NoncanonicalSpecializedGenericTypeMetadata:
+    Printer << "noncanonical specialized generic type metadata for ";
+    print(Node->getChild(0));
+    return nullptr;
+  case Node::Kind::NoncanonicalSpecializedGenericTypeMetadataCache:
+    Printer << "cache variable for noncanonical specialized generic type metadata for ";
     print(Node->getChild(0));
     return nullptr;
   }

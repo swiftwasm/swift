@@ -723,16 +723,13 @@ bool ParameterList::hasInternalParameter(StringRef Prefix) const {
 
 bool Decl::hasUnderscoredNaming() const {
   const Decl *D = this;
-  if (const auto AFD = dyn_cast<AbstractFunctionDecl>(D)) {
-    // If it's a function with a parameter with leading underscore, it's a
-    // private function.
-    if (AFD->getParameters()->hasInternalParameter("_")) {
-      return true;
-    }
-  }
 
-  if (const auto SubscriptD = dyn_cast<SubscriptDecl>(D)) {
-    if (SubscriptD->getIndices()->hasInternalParameter("_")) {
+  // If it's a function or subscript with a parameter with leading
+  // underscore, it's a private function or subscript.
+  if (isa<AbstractFunctionDecl>(D) || isa<SubscriptDecl>(D)) {
+    const auto VD = cast<ValueDecl>(D);
+    if (getParameterList(const_cast<ValueDecl *>(VD))
+            ->hasInternalParameter("_")) {
       return true;
     }
   }
@@ -1298,14 +1295,28 @@ bool ExtensionDecl::isConstrainedExtension() const {
 bool ExtensionDecl::isEquivalentToExtendedContext() const {
   auto decl = getExtendedNominal();
   bool extendDeclFromSameModule = false;
-  if (!decl->getAlternateModuleName().empty()) {
-    // if the extended type was defined in the same module with the extension,
-    // we should consider them as the same module to preserve ABI stability.
-    extendDeclFromSameModule = decl->getAlternateModuleName() ==
-      getParentModule()->getNameStr();
+  auto extensionAlterName = getAlternateModuleName();
+  auto typeAlterName = decl->getAlternateModuleName();
+
+  if (!extensionAlterName.empty()) {
+    if (!typeAlterName.empty()) {
+      // Case I: type and extension are both moved from somewhere else
+      extendDeclFromSameModule = typeAlterName == extensionAlterName;
+    } else {
+      // Case II: extension alone was moved from somewhere else
+      extendDeclFromSameModule = extensionAlterName ==
+        decl->getParentModule()->getNameStr();
+    }
   } else {
-    extendDeclFromSameModule = decl->getParentModule() == getParentModule();
+    if (!typeAlterName.empty()) {
+      // Case III: extended type alone was moved from somewhere else
+      extendDeclFromSameModule = typeAlterName == getParentModule()->getNameStr();
+    } else {
+      // Case IV: neither of type and extension was moved from somewhere else
+      extendDeclFromSameModule = getParentModule() == decl->getParentModule();
+    }
   }
+
   return extendDeclFromSameModule
     && !isConstrainedExtension()
     && !getDeclaredInterfaceType()->isExistentialType();
@@ -1532,7 +1543,7 @@ PatternBindingDecl *PatternBindingDecl::createDeserialized(
   return PBD;
 }
 
-ParamDecl *PatternBindingInitializer::getImplicitSelfDecl() {
+ParamDecl *PatternBindingInitializer::getImplicitSelfDecl() const {
   if (SelfParam)
     return SelfParam;
 
@@ -1544,12 +1555,14 @@ ParamDecl *PatternBindingInitializer::getImplicitSelfDecl() {
                         : ParamSpecifier::InOut);
 
       ASTContext &C = DC->getASTContext();
-      SelfParam = new (C) ParamDecl(SourceLoc(), SourceLoc(),
+      auto *mutableThis = const_cast<PatternBindingInitializer *>(this);
+      auto *LazySelfParam = new (C) ParamDecl(SourceLoc(), SourceLoc(),
                                     Identifier(), singleVar->getLoc(),
-                                    C.Id_self, this);
-      SelfParam->setImplicit();
-      SelfParam->setSpecifier(specifier);
-      SelfParam->setInterfaceType(DC->getSelfInterfaceType());
+                                    C.Id_self, mutableThis);
+      LazySelfParam->setImplicit();
+      LazySelfParam->setSpecifier(specifier);
+      LazySelfParam->setInterfaceType(DC->getSelfInterfaceType());
+      mutableThis->SelfParam = LazySelfParam;
     }
   }
 
@@ -5601,7 +5614,7 @@ SourceRange VarDecl::getTypeSourceRangeForDiagnostics() const {
   if (!Pat || Pat->isImplicit())
     return SourceRange();
 
-  if (auto *VP = dyn_cast<VarPattern>(Pat))
+  if (auto *VP = dyn_cast<BindingPattern>(Pat))
     Pat = VP->getSubPattern();
   if (auto *TP = dyn_cast<TypedPattern>(Pat))
     if (auto typeRepr = TP->getTypeRepr())
@@ -6067,21 +6080,14 @@ bool VarDecl::isPropertyMemberwiseInitializedWithWrappedType() const {
   return allAttachedPropertyWrappersHaveWrappedValueInit();
 }
 
-bool VarDecl::isInnermostPropertyWrapperInitUsesEscapingAutoClosure() const {
-  auto customAttrs = getAttachedPropertyWrappers();
-  if (customAttrs.empty())
-    return false;
-
-  unsigned innermostWrapperIndex = customAttrs.size() - 1;
-  auto typeInfo = getAttachedPropertyWrapperTypeInfo(innermostWrapperIndex);
-  return typeInfo.isWrappedValueInitUsingEscapingAutoClosure;
-}
-
 Type VarDecl::getPropertyWrapperInitValueInterfaceType() const {
-  Type valueInterfaceTy = getValueInterfaceType();
+  auto wrapperInfo = getPropertyWrapperBackingPropertyInfo();
+  if (!wrapperInfo || !wrapperInfo.wrappedValuePlaceholder)
+    return Type();
 
-  if (isInnermostPropertyWrapperInitUsesEscapingAutoClosure())
-    return FunctionType::get({}, valueInterfaceTy);
+  Type valueInterfaceTy = wrapperInfo.wrappedValuePlaceholder->getType();
+  if (valueInterfaceTy->hasArchetype())
+    valueInterfaceTy = valueInterfaceTy->mapTypeOutOfContext();
 
   return valueInterfaceTy;
 }
@@ -6348,12 +6354,9 @@ bool ParamDecl::hasDefaultExpr() const {
   case DefaultArgumentKind::StoredProperty:
     return false;
   case DefaultArgumentKind::Normal:
-  case DefaultArgumentKind::File:
-  case DefaultArgumentKind::FilePath:
-  case DefaultArgumentKind::Line:
-  case DefaultArgumentKind::Column:
-  case DefaultArgumentKind::Function:
-  case DefaultArgumentKind::DSOHandle:
+#define MAGIC_IDENTIFIER(NAME, STRING, SYNTAX_KIND) \
+  case DefaultArgumentKind::NAME:
+#include "swift/AST/MagicIdentifierKinds.def"
   case DefaultArgumentKind::NilLiteral:
   case DefaultArgumentKind::EmptyArray:
   case DefaultArgumentKind::EmptyDictionary:
@@ -6371,12 +6374,9 @@ bool ParamDecl::hasCallerSideDefaultExpr() const {
   case DefaultArgumentKind::StoredProperty:
   case DefaultArgumentKind::Normal:
     return false;
-  case DefaultArgumentKind::File:
-  case DefaultArgumentKind::FilePath:
-  case DefaultArgumentKind::Line:
-  case DefaultArgumentKind::Column:
-  case DefaultArgumentKind::Function:
-  case DefaultArgumentKind::DSOHandle:
+#define MAGIC_IDENTIFIER(NAME, STRING, SYNTAX_KIND) \
+  case DefaultArgumentKind::NAME:
+#include "swift/AST/MagicIdentifierKinds.def"
   case DefaultArgumentKind::NilLiteral:
   case DefaultArgumentKind::EmptyArray:
   case DefaultArgumentKind::EmptyDictionary:
@@ -6613,12 +6613,9 @@ ParamDecl::getDefaultValueStringRepresentation(
                                 scratch);
   }
   case DefaultArgumentKind::Inherited: return "super";
-  case DefaultArgumentKind::File: return "#file";
-  case DefaultArgumentKind::FilePath: return "#filePath";
-  case DefaultArgumentKind::Line: return "#line";
-  case DefaultArgumentKind::Column: return "#column";
-  case DefaultArgumentKind::Function: return "#function";
-  case DefaultArgumentKind::DSOHandle: return "#dsohandle";
+#define MAGIC_IDENTIFIER(NAME, STRING, SYNTAX_KIND) \
+  case DefaultArgumentKind::NAME: return STRING;
+#include "swift/AST/MagicIdentifierKinds.def"
   case DefaultArgumentKind::NilLiteral: return "nil";
   case DefaultArgumentKind::EmptyArray: return "[]";
   case DefaultArgumentKind::EmptyDictionary: return "[:]";

@@ -2547,6 +2547,21 @@ void Remangler::mangleCanonicalSpecializedGenericTypeMetadataAccessFunction(
   Buffer << "Mb";
 }
 
+void Remangler::mangleMetadataInstantiationCache(Node *node) {
+  mangleSingleChildNode(node);
+  Buffer << "MK";
+}
+
+void Remangler::mangleNoncanonicalSpecializedGenericTypeMetadata(Node *node) {
+  mangleSingleChildNode(node);
+  Buffer << "MN";
+}
+
+void Remangler::mangleNoncanonicalSpecializedGenericTypeMetadataCache(Node *node) {
+  mangleSingleChildNode(node);
+  Buffer << "MJ";
+}
+
 } // anonymous namespace
 
 /// The top-level interface to the remangler.

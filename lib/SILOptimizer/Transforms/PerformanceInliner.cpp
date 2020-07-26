@@ -432,11 +432,8 @@ bool SILPerformanceInliner::isProfitableToInline(
           // The access is dynamic and has no nested conflict
           // See if the storage location is considered by
           // access enforcement optimizations
-          AccessedStorage storage =
-              findAccessedStorageNonNested(BAI->getSource());
-          if (BAI->hasNoNestedConflict() &&
-              (storage.isUniquelyIdentified() ||
-               storage.getKind() == AccessedStorage::Class)) {
+          AccessedStorage storage = findAccessedStorage(BAI->getSource());
+          if (BAI->hasNoNestedConflict() && (storage.isFormalAccessBase())) {
             BlockW.updateBenefit(ExclusivityBenefitWeight,
                                  ExclusivityBenefitBase);
           } else {
@@ -1011,7 +1008,7 @@ public:
     DominanceAnalysis *DA = PM->getAnalysis<DominanceAnalysis>();
     SILLoopAnalysis *LA = PM->getAnalysis<SILLoopAnalysis>();
     SideEffectAnalysis *SEA = PM->getAnalysis<SideEffectAnalysis>();
-    OptRemark::Emitter ORE(DEBUG_TYPE, getFunction()->getModule());
+    OptRemark::Emitter ORE(DEBUG_TYPE, *getFunction());
 
     if (getOptions().InlineThreshold == 0) {
       return;

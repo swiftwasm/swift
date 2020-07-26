@@ -2132,6 +2132,9 @@ void Remangler::mangleOpaqueTypeDescriptorAccessorVar(Node *node) {
 void Remangler::mangleAccessorFunctionReference(Node *node) {
   unreachable("can't remangle");
 }
+void Remangler::mangleMetadataInstantiationCache(Node *node) {
+  unreachable("unsupported");
+}
 
 void Remangler::mangleCanonicalSpecializedGenericMetaclass(Node *node) {
   Buffer << "MM";
@@ -2142,6 +2145,16 @@ void Remangler::mangleCanonicalSpecializedGenericTypeMetadataAccessFunction(
     Node *node) {
   mangleSingleChildNode(node);
   Buffer << "Mb";
+}
+
+void Remangler::mangleNoncanonicalSpecializedGenericTypeMetadata(Node *node) {
+  mangleSingleChildNode(node);
+  Buffer << "MN";
+}
+
+void Remangler::mangleNoncanonicalSpecializedGenericTypeMetadataCache(Node *node) {
+  mangleSingleChildNode(node);
+  Buffer << "MJ";
 }
 
 /// The top-level interface to the remangler.

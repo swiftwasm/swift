@@ -29,7 +29,6 @@
 #include "swift/AST/SourceFile.h"
 #include "swift/AST/TypeCheckRequests.h"
 #include "swift/Basic/Statistic.h"
-#include "swift/Basic/Timer.h"
 #include "swift/ClangImporter/ClangModule.h"
 #include "swift/SIL/PrettyStackTrace.h"
 #include "swift/SIL/SILArgument.h"
@@ -51,8 +50,7 @@ using namespace Lowering;
 
 SILGenModule::SILGenModule(SILModule &M, ModuleDecl *SM)
     : M(M), Types(M.Types), SwiftModule(SM), TopLevelSGF(nullptr),
-      MagicFileStringsByFilePath(
-          SM->computeMagicFileStringMap(/*shouldDiagnose=*/true)) {
+      FileIDsByFilePath(SM->computeFileIDMap(/*shouldDiagnose=*/true)) {
   const SILOptions &Opts = M.getOptions();
   if (!Opts.UseProfile.empty()) {
     auto ReaderOrErr = llvm::IndexedInstrProfReader::create(Opts.UseProfile);
@@ -772,8 +770,8 @@ static void emitDelayedFunction(SILGenModule &SGM,
               ->isPropertyMemberwiseInitializedWithWrappedType()) {
         auto wrapperInfo =
             originalProperty->getPropertyWrapperBackingPropertyInfo();
-        assert(wrapperInfo.originalInitialValue);
-        init = wrapperInfo.originalInitialValue;
+        assert(wrapperInfo.wrappedValuePlaceholder->getOriginalWrappedValue());
+        init = wrapperInfo.wrappedValuePlaceholder->getOriginalWrappedValue();
       }
     }
 
@@ -935,43 +933,6 @@ void SILGenModule::postEmitFunction(SILDeclRef constant,
   emitDifferentiabilityWitnessesForFunction(constant, F);
 }
 
-/// Returns the SIL differentiability witness generic signature given the
-/// original declaration's generic signature and the derivative generic
-/// signature.
-///
-/// In general, the differentiability witness generic signature is equal to the
-/// derivative generic signature.
-///
-/// Edge case, if two conditions are satisfied:
-/// 1. The derivative generic signature is equal to the original generic
-///    signature.
-/// 2. The derivative generic signature has *all concrete* generic parameters
-///    (i.e. all generic parameters are bound to concrete types via same-type
-///    requirements).
-///
-/// Then the differentiability witness generic signature is `nullptr`.
-///
-/// Both the original and derivative declarations are lowered to SIL functions
-/// with a fully concrete type and no generic signature, so the
-/// differentiability witness should similarly have no generic signature.
-static GenericSignature
-getDifferentiabilityWitnessGenericSignature(GenericSignature origGenSig,
-                                            GenericSignature derivativeGenSig) {
-  // If there is no derivative generic signature, return the original generic
-  // signature.
-  if (!derivativeGenSig)
-    return origGenSig;
-  // If derivative generic signature has all concrete generic parameters and is
-  // equal to the original generic signature, return `nullptr`.
-  auto derivativeCanGenSig = derivativeGenSig.getCanonicalSignature();
-  auto origCanGenSig = origGenSig.getCanonicalSignature();
-  if (origCanGenSig == derivativeCanGenSig &&
-      derivativeCanGenSig->areAllParamsConcrete())
-    return GenericSignature();
-  // Otherwise, return the derivative generic signature.
-  return derivativeGenSig;
-}
-
 void SILGenModule::emitDifferentiabilityWitnessesForFunction(
     SILDeclRef constant, SILFunction *F) {
   // Visit `@derivative` attributes and generate SIL differentiability
@@ -992,9 +953,10 @@ void SILGenModule::emitDifferentiabilityWitnessesForFunction(
               diffAttr->getDerivativeGenericSignature()) &&
              "Type-checking should resolve derivative generic signatures for "
              "all original SIL functions with generic signatures");
-      auto witnessGenSig = getDifferentiabilityWitnessGenericSignature(
-          AFD->getGenericSignature(),
-          diffAttr->getDerivativeGenericSignature());
+      auto witnessGenSig =
+          autodiff::getDifferentiabilityWitnessGenericSignature(
+              AFD->getGenericSignature(),
+              diffAttr->getDerivativeGenericSignature());
       AutoDiffConfig config(diffAttr->getParameterIndices(), resultIndices,
                             witnessGenSig);
       emitDifferentiabilityWitness(AFD, F, config, /*jvp*/ nullptr,
@@ -1015,8 +977,9 @@ void SILGenModule::emitDifferentiabilityWitnessesForFunction(
       auto origDeclRef =
           SILDeclRef(origAFD).asForeign(requiresForeignEntryPoint(origAFD));
       auto *origFn = getFunction(origDeclRef, NotForDefinition);
-      auto witnessGenSig = getDifferentiabilityWitnessGenericSignature(
-          origAFD->getGenericSignature(), AFD->getGenericSignature());
+      auto witnessGenSig =
+          autodiff::getDifferentiabilityWitnessGenericSignature(
+              origAFD->getGenericSignature(), AFD->getGenericSignature());
       auto *resultIndices = IndexSubset::get(getASTContext(), 1, {0});
       AutoDiffConfig config(derivAttr->getParameterIndices(), resultIndices,
                             witnessGenSig);
@@ -1353,12 +1316,9 @@ void SILGenModule::emitDefaultArgGenerator(SILDeclRef constant,
     break;
 
   case DefaultArgumentKind::Inherited:
-  case DefaultArgumentKind::Column:
-  case DefaultArgumentKind::File:
-  case DefaultArgumentKind::FilePath:
-  case DefaultArgumentKind::Line:
-  case DefaultArgumentKind::Function:
-  case DefaultArgumentKind::DSOHandle:
+#define MAGIC_IDENTIFIER(NAME, STRING, SYNTAX_KIND) \
+  case DefaultArgumentKind::NAME:
+#include "swift/AST/MagicIdentifierKinds.def"
   case DefaultArgumentKind::NilLiteral:
   case DefaultArgumentKind::EmptyArray:
   case DefaultArgumentKind::EmptyDictionary:

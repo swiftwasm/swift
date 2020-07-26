@@ -67,11 +67,10 @@ void TBDGenVisitor::addSymbolInternal(StringRef name,
   if (!isLinkerDirective && Opts.LinkerDirectivesOnly)
     return;
   Symbols.addSymbol(kind, name, Targets);
-  if (StringSymbols && kind == SymbolKind::GlobalSymbol) {
-    auto isNewValue = StringSymbols->insert(name).second;
-    (void)isNewValue;
+  if (kind == SymbolKind::GlobalSymbol) {
+    StringSymbols.push_back(name);
 #ifndef NDEBUG
-    if (!isNewValue) {
+    if (!DuplicateSymbolChecker.insert(name).second) {
       llvm::dbgs() << "TBDGen duplicate symbol: " << name << '\n';
       assert(false && "TBDGen symbol appears twice");
     }
@@ -531,8 +530,10 @@ void TBDGenVisitor::addAutoDiffLinearMapFunction(AbstractFunctionDecl *original,
       config.parameterIndices,
       original->getInterfaceType()->castTo<AnyFunctionType>());
   Mangle::ASTMangler mangler;
-  AutoDiffConfig silConfig{loweredParamIndices, config.resultIndices,
-                           config.derivativeGenericSignature};
+  AutoDiffConfig silConfig{
+      loweredParamIndices, config.resultIndices,
+      autodiff::getDifferentiabilityWitnessGenericSignature(
+          original->getGenericSignature(), config.derivativeGenericSignature)};
   std::string linearMapName =
       mangler.mangleAutoDiffLinearMapHelper(declRef.mangle(), kind, silConfig);
   addSymbol(linearMapName);
@@ -543,7 +544,9 @@ void TBDGenVisitor::addAutoDiffDerivativeFunction(
     GenericSignature derivativeGenericSignature,
     AutoDiffDerivativeFunctionKind kind) {
   auto *assocFnId = AutoDiffDerivativeFunctionIdentifier::get(
-      kind, parameterIndices, derivativeGenericSignature,
+      kind, parameterIndices,
+      autodiff::getDifferentiabilityWitnessGenericSignature(
+          original->getGenericSignature(), derivativeGenericSignature),
       original->getASTContext());
   auto declRef =
       SILDeclRef(original).asForeign(requiresForeignEntryPoint(original));
@@ -570,8 +573,10 @@ void TBDGenVisitor::addDifferentiabilityWitness(
       original->getInterfaceType()->castTo<AnyFunctionType>());
 
   auto originalMangledName = declRef.mangle();
-  AutoDiffConfig config{silParamIndices, resultIndices,
-                        derivativeGenericSignature};
+  AutoDiffConfig config{
+      silParamIndices, resultIndices,
+      autodiff::getDifferentiabilityWitnessGenericSignature(
+          original->getGenericSignature(), derivativeGenericSignature)};
   SILDifferentiabilityWitnessKey key(originalMangledName, config);
 
   Mangle::ASTMangler mangler;
@@ -969,13 +974,14 @@ void TBDGenVisitor::visitProtocolDecl(ProtocolDecl *PD) {
     struct WitnessVisitor : public SILWitnessVisitor<WitnessVisitor> {
       TBDGenVisitor &TBD;
       ProtocolDecl *PD;
+      bool Resilient;
 
     public:
       WitnessVisitor(TBDGenVisitor &TBD, ProtocolDecl *PD)
-          : TBD(TBD), PD(PD) {}
+          : TBD(TBD), PD(PD), Resilient(PD->getParentModule()->isResilient()) {}
 
       void addMethod(SILDeclRef declRef) {
-        if (PD->isResilient()) {
+        if (Resilient) {
           TBD.addDispatchThunk(declRef);
           TBD.addMethodDescriptor(declRef);
         }
@@ -1135,10 +1141,8 @@ GenerateTBDRequest::evaluate(Evaluator &evaluator,
     llvm::MachO::Target targetVar(*ctx.LangOpts.TargetVariant);
     file.addTarget(targetVar);
   }
-  StringSet symbols;
   auto *clang = static_cast<ClangImporter *>(ctx.getClangModuleLoader());
-  TBDGenVisitor visitor(file, {target}, &symbols,
-                        clang->getTargetInfo().getDataLayout(),
+  TBDGenVisitor visitor(file, {target}, clang->getTargetInfo().getDataLayout(),
                         linkInfo, M, opts);
 
   auto visitFile = [&](FileUnit *file) {
@@ -1187,22 +1191,12 @@ GenerateTBDRequest::evaluate(Evaluator &evaluator,
     });
   }
 
-  return std::make_pair(std::move(file), std::move(symbols));
+  return std::make_pair(std::move(file), std::move(visitor.StringSymbols));
 }
 
-void swift::enumeratePublicSymbols(FileUnit *file, StringSet &symbols,
-                                   const TBDGenOptions &opts) {
-  assert(symbols.empty() && "Additive symbol enumeration not supported");
-  auto &evaluator = file->getASTContext().evaluator;
-  auto desc = TBDGenDescriptor::forFile(file, opts);
-  symbols = llvm::cantFail(evaluator(GenerateTBDRequest{desc})).second;
-}
-void swift::enumeratePublicSymbols(ModuleDecl *M, StringSet &symbols,
-                                   const TBDGenOptions &opts) {
-  assert(symbols.empty() && "Additive symbol enumeration not supported");
-  auto &evaluator = M->getASTContext().evaluator;
-  auto desc = TBDGenDescriptor::forModule(M, opts);
-  symbols = llvm::cantFail(evaluator(GenerateTBDRequest{desc})).second;
+std::vector<std::string> swift::getPublicSymbols(TBDGenDescriptor desc) {
+  auto &evaluator = desc.getParentModule()->getASTContext().evaluator;
+  return llvm::cantFail(evaluator(GenerateTBDRequest{desc})).second;
 }
 void swift::writeTBDFile(ModuleDecl *M, llvm::raw_ostream &os,
                          const TBDGenOptions &opts) {
