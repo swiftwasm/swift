@@ -45,7 +45,7 @@
        "indexstore-db": {
             "remote": { "id": "apple/indexstore-db" } },
         "sourcekit-lsp": {
-            "remote": { "id": "apple/sourcekit-lsp" } },
+            "remote": { "id": "swiftwasm/sourcekit-lsp" } },
         "swift-format": {
             "remote": { "id": "apple/swift-format" } },
         "llvm-project": {
