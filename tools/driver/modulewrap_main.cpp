@@ -44,7 +44,6 @@ private:
   std::string OutputFilename = "-";
   llvm::Triple TargetTriple;
   std::vector<std::string> InputFilenames;
-  bool UseSharedResourceFolder = true;
 
 public:
   bool hasSingleInput() const { return InputFilenames.size() == 1; }
@@ -60,8 +59,6 @@ public:
 
   const std::vector<std::string> &getInputFilenames() { return InputFilenames; }
   llvm::Triple &getTargetTriple() { return TargetTriple; }
-
-  bool useSharedResourceFolder() { return UseSharedResourceFolder; }
 
   int parseArgs(llvm::ArrayRef<const char *> Args, DiagnosticEngine &Diags) {
     using namespace options;
@@ -114,13 +111,6 @@ public:
       OutputFilename = A->getValue();
     }
 
-    if (ParsedArgs.hasFlag(OPT_static_executable, OPT_no_static_executable,
-                           false) ||
-        ParsedArgs.hasFlag(OPT_static_stdlib, OPT_no_static_stdlib, false) ||
-        ParsedArgs.hasArg(OPT_static)) {
-      UseSharedResourceFolder = false;
-    }
-
     return 0;
   }
 };
@@ -169,8 +159,7 @@ int modulewrap_main(ArrayRef<const char *> Args, const char *Argv0,
   SearchPathOptions SearchPathOpts;
   SmallString<128> RuntimeResourcePath;
   CompilerInvocation::computeRuntimeResourcePathFromExecutablePath(
-      MainExecutablePath, Invocation.useSharedResourceFolder(),
-      RuntimeResourcePath);
+    MainExecutablePath, RuntimeResourcePath);
   SearchPathOpts.RuntimeResourcePath = std::string(RuntimeResourcePath.str());
 
   SourceManager SrcMgr;
