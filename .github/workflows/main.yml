@@ -49,7 +49,7 @@ jobs:
         if: ${{ failure() }}
         uses: actions/upload-artifact@v1
         with:
-          name: ubuntu20.04-swiftmodules
+          name: ubuntu18.04-swiftmodules
           path: /tmp/*.swiftmodule
       - name: Upload Ubuntu 18.04 installable archive
         uses: actions/upload-artifact@v1
