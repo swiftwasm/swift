@@ -45,6 +45,12 @@ jobs:
       - name: Build Ubuntu 18.04 installable archive
         run: |
           ./utils/webassembly/ci.sh
+      - name: Upload .swiftmodule files compiled on Ubuntu 20.04
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v1
+        with:
+          name: ubuntu20.04-swiftmodules
+          path: /tmp/*.swiftmodule
       - name: Upload Ubuntu 18.04 installable archive
         uses: actions/upload-artifact@v1
         with:
@@ -91,6 +97,12 @@ jobs:
       - name: Build Ubuntu 20.04 installable archive
         run: |
           ./utils/webassembly/ci.sh
+      - name: Upload .swiftmodule files compiled on Ubuntu 20.04
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v1
+        with:
+          name: ubuntu20.04-swiftmodules
+          path: /tmp/*.swiftmodule
       - name: Upload Ubuntu 20.04 installable archive
         uses: actions/upload-artifact@v1
         with:
