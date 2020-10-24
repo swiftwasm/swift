@@ -185,6 +185,7 @@ jobs:
         with:
           repository: swiftwasm/integration-tests
           path: integration-tests
+      - uses: mxschmitt/action-tmate@v3
       - name: Run integration tests
         run: swift run # Use TOOLCHAIN env value
         working-directory: ${{ github.workspace }}/integration-tests
@@ -275,6 +276,7 @@ jobs:
         with:
           repository: swiftwasm/integration-tests
           path: integration-tests
+      - uses: mxschmitt/action-tmate@v3
       - name: Run integration tests
         run: swift run # Use TOOLCHAIN env value
         working-directory: ${{ github.workspace }}/integration-tests
