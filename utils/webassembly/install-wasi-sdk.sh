@@ -19,5 +19,6 @@ WASI_SDK_FULL_NAME=$(basename "$WASI_SDK_TAR_PATH" -"$1".tar.gz)
 tar xfz "$WASI_SDK_TAR_PATH"
 popd
 
-rm -rf $SOURCE_PATH/wasi-sdk
-mv "$workdir/$WASI_SDK_FULL_NAME" $SOURCE_PATH/wasi-sdk
+mkdir -p "$SOURCE_PATH/build-sdk"
+rm -rf $SOURCE_PATH/build-sdk/wasi-sdk
+mv "$workdir/$WASI_SDK_FULL_NAME" $SOURCE_PATH/build-sdk/wasi-sdk

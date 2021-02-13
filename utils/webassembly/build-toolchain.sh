@@ -4,7 +4,7 @@ set -ex
 SOURCE_PATH="$(cd "$(dirname "$0")/../../.." && pwd)"
 UTILS_PATH="$(cd "$(dirname "$0")" && pwd)"
 
-WASI_SDK_PATH="$SOURCE_PATH/wasi-sdk"
+WASI_SDK_PATH="$SOURCE_PATH/build-sdk/wasi-sdk"
 WASI_SYSROOT_PATH="$WASI_SDK_PATH/share/wasi-sysroot"
 
 case $(uname -s) in
