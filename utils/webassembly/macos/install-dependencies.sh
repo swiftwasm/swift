@@ -26,5 +26,3 @@ cd $SWIFT_PATH
 
 cd $SOURCE_PATH
 
-$SWIFT_PATH/utils/webassembly/install-wasi-sdk.sh macos macos-10.15
-

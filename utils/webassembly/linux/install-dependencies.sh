@@ -52,8 +52,6 @@ fi
 
 cmake --version
 
-$SWIFT_PATH/utils/webassembly/install-wasi-sdk.sh linux ubuntu-18.04
-
 # Install sccache
 
 if [ -z $(which sccache) ]; then
