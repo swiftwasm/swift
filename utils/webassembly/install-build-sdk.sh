@@ -14,7 +14,7 @@ install_libxml2() {
 
 install_icu() {
   ICU_URL="https://github.com/swiftwasm/icu4c-wasi/releases/download/0.5.0/icu4c-wasi.tar.xz"
-  curl -L "$ICU_URL" | tar xz
+  curl -L "$ICU_URL" | tar Jx
   rm -rf "$BUILD_SDK_PATH/icu"
   mv icu_out "$BUILD_SDK_PATH/icu"
 }
