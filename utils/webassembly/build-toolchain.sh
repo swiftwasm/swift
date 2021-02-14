@@ -4,7 +4,8 @@ set -ex
 SOURCE_PATH="$(cd "$(dirname "$0")/../../.." && pwd)"
 UTILS_PATH="$(cd "$(dirname "$0")" && pwd)"
 
-WASI_SDK_PATH="$SOURCE_PATH/build-sdk/wasi-sdk"
+BUILD_SDK_PATH="$SOURCE_PATH/build-sdk"
+WASI_SDK_PATH="$BUILD_SDK_PATH/wasi-sdk"
 WASI_SYSROOT_PATH="$WASI_SDK_PATH/share/wasi-sysroot"
 
 case $(uname -s) in
@@ -97,6 +98,11 @@ build_target_toolchain() {
     -D LLVM_DIR="$HOST_BUILD_DIR/llvm-$HOST_SUFFIX/lib/cmake/llvm/" \
     -D SWIFT_NATIVE_SWIFT_TOOLS_PATH="$HOST_BUILD_DIR/swift-$HOST_SUFFIX/bin" \
     -D SWIFT_WASI_SYSROOT_PATH="$WASI_SYSROOT_PATH" \
+    -D SWIFT_WASI_wasm32_ICU_UC_INCLUDE="$BUILD_SDK_PATH/icu/usr/include" \
+    -D SWIFT_WASI_wasm32_ICU_UC="$BUILD_SDK_PATH/icu/usr/lib/libicuuc.a" \
+    -D SWIFT_WASI_wasm32_ICU_I18N_INCLUDE="$BUILD_SDK_PATH/icu/usr/include" \
+    -D SWIFT_WASI_wasm32_ICU_I18N="$BUILD_SDK_PATH/icu/usr/lib/libicui18n.a" \
+    -D SWIFT_WASI_wasm32_ICU_DATA="$BUILD_SDK_PATH/icu/usr/lib/libicudata.a" \
     -G Ninja \
     -S "$SOURCE_PATH/swift"
 
