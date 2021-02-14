@@ -10,8 +10,8 @@ cd "$BUILD_SDK_PATH"
 install_libxml2() {
   LIBXML2_URL="https://github.com/swiftwasm/libxml2-wasm/releases/download/1.0.0/libxml2-wasm32-unknown-wasi.tar.gz"
   curl -L "$LIBXML2_URL" | tar xz
-  rm -rf "$BUILD_SDK_PATH/libxml2-wasm32-unknown-wasi"
-  mv libxml2-wasm32-unknown-wasi "$BUILD_SDK_PATH/libxml2-wasm32-unknown-wasi"
+  rm -rf "$BUILD_SDK_PATH/libxml2"
+  mv libxml2-wasm32-unknown-wasi "$BUILD_SDK_PATH/libxml2"
 }
 
 install_icu() {

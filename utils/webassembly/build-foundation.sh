@@ -4,7 +4,7 @@ DESTINATION_TOOLCHAIN=$1
 WASI_SYSROOT_PATH=$2
 SOURCE_PATH="$(cd "$(dirname $0)/../../.." && pwd)"
 BUILD_SDK_PATH="$SOURCE_PATH/build-sdk"
-LIBXML2_PATH="$BUILD_SDK_PATH/libxml2-wasm32-unknown-wasi"
+LIBXML2_PATH="$BUILD_SDK_PATH/libxml2"
 
 FOUNDATION_BUILD="$SOURCE_PATH/target-build/foundation-wasi-wasm32"
 
