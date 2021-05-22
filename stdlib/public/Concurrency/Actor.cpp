@@ -34,6 +34,7 @@
 #include "swift/Runtime/ThreadLocal.h"
 #include "swift/ABI/Task.h"
 #include "swift/ABI/Actor.h"
+#include "llvm/Config/config.h"
 #include "llvm/ADT/PointerIntPair.h"
 #include "TaskPrivate.h"
 
@@ -63,6 +64,11 @@
 
 #if HAVE_PTHREAD_H
 #include <pthread.h>
+
+// Only use __has_include since HAVE_PTHREAD_NP_H is not provided.
+#if __has_include(<pthread_np.h>)
+#include <pthread_np.h>
+#endif
 #endif
 
 #if defined(_WIN32)
@@ -1479,6 +1485,7 @@ static void swift_job_runImpl(Job *job, ExecutorRef executor) {
 ///                     the actor lives for the duration of job execution.
 ///                     Note that this may conflict with the retain/release
 ///                     design in the DefaultActorImpl, but it does fix bugs!
+SWIFT_CC(swiftasync)
 static void processDefaultActor(DefaultActorImpl *currentActor,
                                 RunningJobInfo runner) {
 #if SWIFT_TASK_PRINTF_DEBUG
@@ -1553,6 +1560,7 @@ static void processDefaultActor(DefaultActorImpl *currentActor,
   swift_release(actor);
 }
 
+SWIFT_CC(swiftasync)
 void ProcessInlineJob::process(Job *job) {
   DefaultActorImpl *actor = DefaultActorImpl::fromInlineJob(job);
 
@@ -1561,11 +1569,11 @@ void ProcessInlineJob::process(Job *job) {
   auto targetPriority = job->getPriority();
   auto runner = RunningJobInfo::forInline(targetPriority);
 
-  // FIXME: force tail call
   swift_retain(actor);
-  return processDefaultActor(actor, runner);
+  return processDefaultActor(actor, runner); // 'return' forces tail call
 }
 
+SWIFT_CC(swiftasync)
 void ProcessOutOfLineJob::process(Job *job) {
   auto self = cast<ProcessOutOfLineJob>(job);
   DefaultActorImpl *actor = self->Actor;
@@ -1577,11 +1585,11 @@ void ProcessOutOfLineJob::process(Job *job) {
 
   delete self;
 
-  // FIXME: force tail call
   swift_retain(actor);
-  return processDefaultActor(actor, runner);
+  return processDefaultActor(actor, runner); // 'return' forces tail call
 }
 
+SWIFT_CC(swiftasync)
 void ProcessOverrideJob::process(Job *job) {
   auto self = cast<ProcessOverrideJob>(job);
 
@@ -1589,9 +1597,8 @@ void ProcessOverrideJob::process(Job *job) {
   auto actor = self->Actor;
   auto runner = RunningJobInfo::forOverride(self);
 
-  // FIXME: force tail call
   swift_retain(actor);
-  return processDefaultActor(actor, runner);
+  return processDefaultActor(actor, runner); // 'return' forces tail call
 }
 
 void DefaultActorImpl::enqueue(Job *job) {
@@ -1808,8 +1815,7 @@ static void runOnAssumedThread(AsyncTask *task, ExecutorRef executor,
   if (oldTracking) {
     oldTracking->setActiveExecutor(executor);
 
-    // FIXME: force tail call
-    return task->runInFullyEstablishedContext();
+    return task->runInFullyEstablishedContext(); // 'return' forces tail call
   }
 
   // Otherwise, set up tracking info.
@@ -1852,8 +1858,7 @@ static void swift_task_switchImpl(SWIFT_ASYNC_CONTEXT AsyncContext *resumeContex
   // we can just immediately continue running with the resume function
   // we were passed in.
   if (!currentExecutor.mustSwitchToRun(newExecutor)) {
-    // FIXME: force tail call
-    return resumeFunction(resumeContext);
+    return resumeFunction(resumeContext); // 'return' forces tail call
   }
 
   auto task = swift_task_getCurrent();
@@ -1877,7 +1882,7 @@ static void swift_task_switchImpl(SWIFT_ASYNC_CONTEXT AsyncContext *resumeContex
     fprintf(stderr, "[%p] switch succeeded, task %p assumed thread for executor %p\n", pthread_self(), task, newExecutor.getIdentity());
 #endif
     giveUpThreadForSwitch(currentExecutor, runner);
-    // FIXME: force tail call
+    // 'return' forces tail call
     return runOnAssumedThread(task, newExecutor, trackingInfo, runner);
   }
 

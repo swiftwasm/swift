@@ -1899,6 +1899,26 @@ checkIndividualConformance(NormalProtocolConformance *conformance,
     return conformance;
   }
 
+  if (T->isActorType()) {
+    if (auto globalActor = Proto->getGlobalActorAttr()) {
+      C.Diags.diagnose(ComplainLoc,
+                       diag::actor_cannot_conform_to_global_actor_protocol, T,
+                       ProtoType);
+
+      CustomAttr *attr;
+      NominalTypeDecl *actor;
+
+      std::tie(attr, actor) = *globalActor;
+
+      C.Diags.diagnose(attr->getLocation(),
+                       diag::protocol_isolated_to_global_actor_here, ProtoType,
+                       actor->getDeclaredInterfaceType());
+
+      conformance->setInvalid();
+      return conformance;
+    }
+  }
+
   if (Proto->isObjC()) {
     // Foreign classes cannot conform to objc protocols.
     if (auto clas = canT->getClassOrBoundGenericClass()) {
@@ -2762,17 +2782,6 @@ bool ConformanceChecker::checkActorIsolation(
     witness->diagnose(diag::actor_isolated_witness,
                       witness->getDescriptiveKind(),
                       witness->getName());
-    if (auto witnessFunc = dyn_cast<FuncDecl>(witness)) {
-      witnessFunc->canBeAsyncHandler();
-      if (!witnessFunc->isAsyncHandler()) {
-        auto handlerNote = witness->diagnose(
-            diag::note_add_asynchandler_to_function,
-            witness->getName());
-        handlerNote.fixItInsert(witness->getAttributeInsertionLoc(false),
-            "@asyncHandler ");
-      }
-    }
-
     {
       auto witnessVar = dyn_cast<VarDecl>(witness);
       if ((witnessVar && !witnessVar->hasStorage()) || !witnessVar) {
@@ -2789,7 +2798,8 @@ bool ConformanceChecker::checkActorIsolation(
 
   case ActorIsolationRestriction::CrossActorSelf:
     return diagnoseNonConcurrentTypesInReference(
-        witness, DC, witness->getLoc(), ConcurrentReferenceKind::CrossActor);
+        witness, DC->getParentModule(), witness->getLoc(),
+        ConcurrentReferenceKind::CrossActor);
 
   case ActorIsolationRestriction::GlobalActorUnsafe:
     witnessIsUnsafe = true;
@@ -2854,7 +2864,8 @@ bool ConformanceChecker::checkActorIsolation(
       return false;
 
     return diagnoseNonConcurrentTypesInReference(
-      witness, DC, witness->getLoc(), ConcurrentReferenceKind::CrossActor);
+      witness, DC->getParentModule(), witness->getLoc(),
+      ConcurrentReferenceKind::CrossActor);
   }
 
   // If the witness has a global actor but the requirement does not, we have
@@ -2888,7 +2899,8 @@ bool ConformanceChecker::checkActorIsolation(
 
     if (isCrossActor) {
       return diagnoseNonConcurrentTypesInReference(
-        witness, DC, witness->getLoc(), ConcurrentReferenceKind::CrossActor);
+        witness, DC->getParentModule(), witness->getLoc(),
+        ConcurrentReferenceKind::CrossActor);
     }
 
     witness->diagnose(
@@ -3889,7 +3901,8 @@ ConformanceChecker::resolveWitnessViaLookup(ValueDecl *requirement) {
       // a member that could in turn satisfy *this* requirement.
       auto derivableProto = cast<ProtocolDecl>(derivable->getDeclContext());
       auto conformance =
-          TypeChecker::conformsToProtocol(Adoptee, derivableProto, DC);
+          TypeChecker::conformsToProtocol(Adoptee, derivableProto,
+                                          DC->getParentModule());
       if (conformance.isConcrete()) {
         (void)conformance.getConcrete()->getWitnessDecl(derivable);
       }
@@ -4909,7 +4922,7 @@ void swift::diagnoseConformanceFailure(Type T,
   // If we're checking conformance of an existential type to a protocol,
   // do a little bit of extra work to produce a better diagnostic.
   if (T->isExistentialType() &&
-      TypeChecker::containsProtocol(T, Proto, DC)) {
+      TypeChecker::containsProtocol(T, Proto, DC->getParentModule())) {
 
     if (!T->isObjCExistentialType()) {
       diags.diagnose(ComplainLoc, diag::type_cannot_conform, true,
@@ -4947,12 +4960,8 @@ void swift::diagnoseConformanceFailure(Type T,
 
       // If the reason is that the raw type does not conform to
       // Equatable, say so.
-      auto equatableProto = ctx.getProtocol(KnownProtocolKind::Equatable);
-      if (!equatableProto)
-        return;
-
-      if (TypeChecker::conformsToProtocol(rawType, equatableProto, enumDecl)
-              .isInvalid()) {
+      if (!TypeChecker::conformsToKnownProtocol(
+              rawType, KnownProtocolKind::Equatable, DC->getParentModule())) {
         SourceLoc loc = enumDecl->getInherited()[0].getSourceRange().Start;
         diags.diagnose(loc, diag::enum_raw_type_not_equatable, rawType);
         return;
@@ -5042,7 +5051,7 @@ void ConformanceChecker::emitDelayedDiags() {
 }
 
 ProtocolConformanceRef
-TypeChecker::containsProtocol(Type T, ProtocolDecl *Proto, DeclContext *DC,
+TypeChecker::containsProtocol(Type T, ProtocolDecl *Proto, ModuleDecl *M,
                               bool skipConditionalRequirements) {
   // Existential types don't need to conform, i.e., they only need to
   // contain the protocol.
@@ -5051,7 +5060,7 @@ TypeChecker::containsProtocol(Type T, ProtocolDecl *Proto, DeclContext *DC,
     // *and* has a witness table.
     if (T->isEqual(Proto->getDeclaredInterfaceType()) &&
         Proto->requiresSelfConformanceWitnessTable()) {
-      auto &ctx = DC->getASTContext();
+      auto &ctx = M->getASTContext();
       return ProtocolConformanceRef(ctx.getSelfConformance(Proto));
     }
 
@@ -5062,8 +5071,8 @@ TypeChecker::containsProtocol(Type T, ProtocolDecl *Proto, DeclContext *DC,
     if (auto superclass = layout.getSuperclass()) {
       auto result =
           (skipConditionalRequirements
-           ? DC->getParentModule()->lookupConformance(superclass, Proto)
-           : TypeChecker::conformsToProtocol(superclass, Proto, DC));
+           ? M->lookupConformance(superclass, Proto)
+           : TypeChecker::conformsToProtocol(superclass, Proto, M));
       if (result) {
         return result;
       }
@@ -5088,14 +5097,13 @@ TypeChecker::containsProtocol(Type T, ProtocolDecl *Proto, DeclContext *DC,
 
   // For non-existential types, this is equivalent to checking conformance.
   return (skipConditionalRequirements
-          ? DC->getParentModule()->lookupConformance(T, Proto)
-          : TypeChecker::conformsToProtocol(T, Proto, DC));
+          ? M->lookupConformance(T, Proto)
+          : TypeChecker::conformsToProtocol(T, Proto, M));
 }
 
 ProtocolConformanceRef
-TypeChecker::conformsToProtocol(Type T, ProtocolDecl *Proto, DeclContext *DC) {
+TypeChecker::conformsToProtocol(Type T, ProtocolDecl *Proto, ModuleDecl *M) {
   // Look up conformance in the module.
-  ModuleDecl *M = DC->getParentModule();
   auto lookupResult = M->lookupConformance(T, Proto);
   if (lookupResult.isInvalid()) {
     return ProtocolConformanceRef::forInvalid();
@@ -5106,12 +5114,10 @@ TypeChecker::conformsToProtocol(Type T, ProtocolDecl *Proto, DeclContext *DC) {
          "unhandled recursion: missing conditional requirements when they're "
          "required");
 
-  // If we have a conditional requirements that
-  // we need to check, do so now.
+  // If we have a conditional requirements that we need to check, do so now.
   if (!condReqs->empty()) {
     auto conditionalCheckResult = checkGenericArguments(
-        DC, SourceLoc(), SourceLoc(), T,
-        {lookupResult.getRequirement()->getSelfInterfaceType()}, *condReqs,
+        M, *condReqs,
         [](SubstitutableType *dependentType) { return Type(dependentType); });
     switch (conditionalCheckResult) {
     case RequirementCheckResult::Success:
@@ -5126,9 +5132,17 @@ TypeChecker::conformsToProtocol(Type T, ProtocolDecl *Proto, DeclContext *DC) {
   return lookupResult;
 }
 
+bool TypeChecker::conformsToKnownProtocol(Type type, KnownProtocolKind protocol,
+                                          ModuleDecl *module) {
+  if (auto *proto =
+          TypeChecker::getProtocol(module->getASTContext(), SourceLoc(), protocol))
+    return (bool)TypeChecker::conformsToProtocol(type, proto, module);
+  return false;
+}
+
 bool
 TypeChecker::couldDynamicallyConformToProtocol(Type type, ProtocolDecl *Proto,
-                                               DeclContext *DC) {
+                                               ModuleDecl *M) {
   // An existential may have a concrete underlying type with protocol conformances
   // we cannot know statically.
   if (type->isExistentialType())
@@ -5145,7 +5159,6 @@ TypeChecker::couldDynamicallyConformToProtocol(Type type, ProtocolDecl *Proto,
       return true;
   }
 
-  ModuleDecl *M = DC->getParentModule();
   // For standard library collection types such as Array, Set or Dictionary
   // which have custom casting machinery implemented for situations like:
   //
@@ -5157,7 +5170,7 @@ TypeChecker::couldDynamicallyConformToProtocol(Type type, ProtocolDecl *Proto,
   // are met or not.
   if (type->isKnownStdlibCollectionType())
     return !M->lookupConformance(type, Proto).isInvalid();
-  return !conformsToProtocol(type, Proto, DC).isInvalid();
+  return !conformsToProtocol(type, Proto, M).isInvalid();
 }
 
 /// Exposes TypeChecker functionality for querying protocol conformance.
@@ -6444,12 +6457,14 @@ void TypeChecker::inferDefaultWitnesses(ProtocolDecl *proto) {
     if (!assocType)
       continue;
 
+    auto *module = proto->getParentModule();
+
     // Find the associated type nearest our own protocol, which might have
     // a default not available in the associated type referenced by the
     // (canonicalized) requirement.
     if (assocType->getProtocol() != proto) {
       SmallVector<ValueDecl *, 2> found;
-      proto->getModuleContext()->lookupQualified(
+      module->lookupQualified(
                            proto, DeclNameRef(assocType->getName()),
                            NL_QualifiedDefault|NL_ProtocolMembers|NL_OnlyTypes,
                            found);
@@ -6469,7 +6484,7 @@ void TypeChecker::inferDefaultWitnesses(ProtocolDecl *proto) {
       proto->mapTypeIntoContext(defaultAssocType);
     auto requirementProto = req.getProtocolDecl();
     auto conformance = conformsToProtocol(defaultAssocTypeInContext,
-                                          requirementProto, proto);
+                                          requirementProto, module);
     if (conformance.isInvalid()) {
       // Diagnose the lack of a conformance. This is potentially an ABI
       // incompatibility.

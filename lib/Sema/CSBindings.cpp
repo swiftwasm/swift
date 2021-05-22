@@ -859,7 +859,8 @@ bool LiteralRequirement::isCoveredBy(Type type, DeclContext *useDC) const {
   if (hasDefaultType() && coversDefaultType(type, getDefaultType()))
     return true;
 
-  return bool(TypeChecker::conformsToProtocol(type, getProtocol(), useDC));
+  return (bool)TypeChecker::conformsToProtocol(type, getProtocol(),
+                                               useDC->getParentModule());
 }
 
 std::pair<bool, Type>
@@ -1646,6 +1647,15 @@ bool TypeVarBindingProducer::computeNext() {
     newBindings.push_back(std::move(binding));
   };
 
+  // Let's attempt only directly inferrable bindings for
+  // a type variable representing a closure type because
+  // such type variables are handled specially and only
+  // bound to a type inferred from their expression, having
+  // contextual bindings is just a trigger for that to
+  // happen.
+  if (TypeVar->getImpl().isClosureType())
+    return false;
+
   for (auto &binding : Bindings) {
     const auto type = binding.BindingType;
     assert(!type->hasError());
@@ -1839,6 +1849,15 @@ TypeVariableBinding::fixForHole(ConstraintSystem &cs) const {
     // type fix because it wouldn't produce a useful diagnostic.
     auto *kpLocator = cs.getConstraintLocator(srcLocator->getAnchor());
     if (cs.hasFixFor(kpLocator, FixKind::AllowKeyPathWithoutComponents))
+      return None;
+
+    // If key path has any invalid component, let's just skip fix because the
+    // invalid component would be already diagnosed.
+    auto keyPath = castToExpr<KeyPathExpr>(srcLocator->getAnchor());
+    if (llvm::any_of(keyPath->getComponents(),
+                     [](KeyPathExpr::Component component) {
+                       return !component.isValid();
+                     }))
       return None;
 
     ConstraintFix *fix = SpecifyKeyPathRootType::create(cs, dstLocator);

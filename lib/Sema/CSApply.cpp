@@ -101,7 +101,7 @@ Solution::computeSubstitutions(GenericSignature sig,
 
     // FIXME: Retrieve the conformance from the solution itself.
     return TypeChecker::conformsToProtocol(replacement, protoType,
-                                           getConstraintSystem().DC);
+                                   getConstraintSystem().DC->getParentModule());
   };
 
   return SubstitutionMap::get(sig,
@@ -620,7 +620,7 @@ namespace {
           // the protocol requirement with Self == the concrete type, and SILGen
           // (or later) can devirtualize as appropriate.
           auto conformance =
-            TypeChecker::conformsToProtocol(baseTy, proto, cs.DC);
+            TypeChecker::conformsToProtocol(baseTy, proto, cs.DC->getParentModule());
           if (conformance.isConcrete()) {
             if (auto witness = conformance.getConcrete()->getWitnessDecl(decl)) {
               bool isMemberOperator = witness->getDeclContext()->isTypeContext();
@@ -2418,7 +2418,7 @@ namespace {
       auto bridgedToObjectiveCConformance
         = TypeChecker::conformsToProtocol(valueType,
                                           bridgedProto,
-                                          cs.DC);
+                                          cs.DC->getParentModule());
 
       FuncDecl *fn = nullptr;
 
@@ -2678,7 +2678,7 @@ namespace {
       ProtocolDecl *protocol = TypeChecker::getProtocol(
           ctx, expr->getLoc(), KnownProtocolKind::ExpressibleByStringLiteral);
 
-      if (!TypeChecker::conformsToProtocol(type, protocol, cs.DC)) {
+      if (!TypeChecker::conformsToProtocol(type, protocol, cs.DC->getParentModule())) {
         // If the type does not conform to ExpressibleByStringLiteral, it should
         // be ExpressibleByExtendedGraphemeClusterLiteral.
         protocol = TypeChecker::getProtocol(
@@ -2687,7 +2687,7 @@ namespace {
         isStringLiteral = false;
         isGraphemeClusterLiteral = true;
       }
-      if (!TypeChecker::conformsToProtocol(type, protocol, cs.DC)) {
+      if (!TypeChecker::conformsToProtocol(type, protocol, cs.DC->getParentModule())) {
         // ... or it should be ExpressibleByUnicodeScalarLiteral.
         protocol = TypeChecker::getProtocol(
             cs.getASTContext(), expr->getLoc(),
@@ -2802,7 +2802,7 @@ namespace {
         assert(proto && "Missing string interpolation protocol?");
 
         auto conformance =
-          TypeChecker::conformsToProtocol(type, proto, cs.DC);
+          TypeChecker::conformsToProtocol(type, proto, cs.DC->getParentModule());
         assert(conformance && "string interpolation type conforms to protocol");
 
         DeclName constrName(ctx, DeclBaseName::createConstructor(), argLabels);
@@ -2908,7 +2908,8 @@ namespace {
       auto proto = TypeChecker::getLiteralProtocol(ctx, expr);
       assert(proto && "Missing object literal protocol?");
       auto conformance =
-        TypeChecker::conformsToProtocol(conformingType, proto, cs.DC);
+        TypeChecker::conformsToProtocol(conformingType, proto,
+                                        cs.DC->getParentModule());
       assert(conformance && "object literal type conforms to protocol");
 
       auto constrName = TypeChecker::getObjectLiteralConstructorName(ctx, expr);
@@ -3511,7 +3512,8 @@ namespace {
       assert(arrayProto && "type-checked array literal w/o protocol?!");
 
       auto conformance =
-        TypeChecker::conformsToProtocol(arrayTy, arrayProto, cs.DC);
+        TypeChecker::conformsToProtocol(arrayTy, arrayProto,
+                                        cs.DC->getParentModule());
       assert(conformance && "Type does not conform to protocol?");
 
       DeclName name(ctx, DeclBaseName::createConstructor(),
@@ -3555,7 +3557,8 @@ namespace {
           KnownProtocolKind::ExpressibleByDictionaryLiteral);
 
       auto conformance =
-        TypeChecker::conformsToProtocol(dictionaryTy, dictionaryProto, cs.DC);
+        TypeChecker::conformsToProtocol(dictionaryTy, dictionaryProto,
+                                        cs.DC->getParentModule());
       if (conformance.isInvalid())
         return nullptr;
 
@@ -4298,7 +4301,7 @@ namespace {
           // Special handle for literals conditional checked cast when they can
           // be statically coerced to the cast type.
           if (protocol && TypeChecker::conformsToProtocol(
-                              toType, protocol, cs.DC)) {
+                              toType, protocol, cs.DC->getParentModule())) {
             ctx.Diags
                 .diagnose(expr->getLoc(),
                           diag::literal_conditional_downcast_to_coercion,
@@ -5193,7 +5196,8 @@ namespace {
         // verified by the solver, we just need to get it again
         // with all of the generic parameters resolved.
         auto hashableConformance =
-          TypeChecker::conformsToProtocol(indexType, hashable, cs.DC);
+          TypeChecker::conformsToProtocol(indexType, hashable,
+                                          cs.DC->getParentModule());
         assert(hashableConformance);
 
         conformances.push_back(hashableConformance);
@@ -5503,13 +5507,13 @@ Expr *ExprRewriter::coerceSuperclass(Expr *expr, Type toType) {
 /// conformances.
 static ArrayRef<ProtocolConformanceRef>
 collectExistentialConformances(Type fromType, Type toType,
-                               DeclContext *DC) {
+                               ModuleDecl *module) {
   auto layout = toType->getExistentialLayout();
 
   SmallVector<ProtocolConformanceRef, 4> conformances;
   for (auto proto : layout.getProtocols()) {
     conformances.push_back(TypeChecker::containsProtocol(
-        fromType, proto->getDecl(), DC));
+        fromType, proto->getDecl(), module));
   }
 
   return toType->getASTContext().AllocateCopy(conformances);
@@ -5532,7 +5536,8 @@ Expr *ExprRewriter::coerceExistential(Expr *expr, Type toType) {
   ASTContext &ctx = cs.getASTContext();
 
   auto conformances =
-    collectExistentialConformances(fromInstanceType, toInstanceType, cs.DC);
+    collectExistentialConformances(fromInstanceType, toInstanceType,
+                                   cs.DC->getParentModule());
 
   // For existential-to-existential coercions, open the source existential.
   if (fromType->isAnyExistentialType()) {
@@ -6120,13 +6125,14 @@ static bool isClosureLiteralExpr(Expr *expr) {
   return (isa<CaptureListExpr>(expr) || isa<ClosureExpr>(expr));
 }
 
-/// Whether we should propagate async down to a closure.
-static bool shouldPropagateAsyncToClosure(Expr *expr) {
+/// Whether the given expression is a closure that should inherit
+/// the actor context from where it was formed.
+static bool closureInheritsActorContext(Expr *expr) {
   if (auto IE = dyn_cast<IdentityExpr>(expr))
-    return shouldPropagateAsyncToClosure(IE->getSubExpr());
+    return closureInheritsActorContext(IE->getSubExpr());
 
   if (auto CLE = dyn_cast<CaptureListExpr>(expr))
-    return shouldPropagateAsyncToClosure(CLE->getClosureBody());
+    return closureInheritsActorContext(CLE->getClosureBody());
 
   if (auto CE = dyn_cast<ClosureExpr>(expr))
     return CE->inheritsActorContext();
@@ -6688,7 +6694,7 @@ Expr *ExprRewriter::coerceToType(Expr *expr, Type toType,
       auto hashable = ctx.getProtocol(KnownProtocolKind::Hashable);
       auto conformance =
         TypeChecker::conformsToProtocol(
-                        cs.getType(expr), hashable, cs.DC);
+                        cs.getType(expr), hashable, cs.DC->getParentModule());
       assert(conformance && "must conform to Hashable");
 
       return cs.cacheType(
@@ -7012,22 +7018,6 @@ Expr *ExprRewriter::coerceToType(Expr *expr, Type toType,
       }
     }
 
-    // If we have a ClosureExpr, then we can safely propagate the 'async'
-    // bit to the closure without invalidating prior analysis.
-    fromEI = fromFunc->getExtInfo();
-    if (toEI.isAsync() && !fromEI.isAsync() &&
-        shouldPropagateAsyncToClosure(expr)) {
-      auto newFromFuncType = fromFunc->withExtInfo(fromEI.withAsync());
-      if (applyTypeToClosureExpr(cs, expr, newFromFuncType)) {
-        fromFunc = newFromFuncType->castTo<FunctionType>();
-
-        // Propagating the 'concurrent' bit might have satisfied the entire
-        // conversion. If so, we're done, otherwise keep converting.
-        if (fromFunc->isEqual(toType))
-          return expr;
-      }
-    }
-
     // If we have a ClosureExpr, then we can safely propagate a global actor
     // to the closure without invalidating prior analysis.
     fromEI = fromFunc->getExtInfo();
@@ -7044,27 +7034,28 @@ Expr *ExprRewriter::coerceToType(Expr *expr, Type toType,
       }
     }
 
-    /// Whether the given effect should be propagated to a closure expression.
-    auto shouldApplyEffect = [&](EffectKind kind) -> bool {
+    /// Whether the given effect is polymorphic at this location.
+    auto isEffectPolymorphic = [&](EffectKind kind) -> bool {
       auto last = locator.last();
       if (!(last && last->is<LocatorPathElt::ApplyArgToParam>()))
-        return true;
+        return false;
 
-      // The effect should not be applied if the closure is an argument
-      // to a function where that effect is polymorphic.
       if (auto *call = getAsExpr<ApplyExpr>(locator.getAnchor())) {
         if (auto *declRef = dyn_cast<DeclRefExpr>(call->getFn())) {
           if (auto *fn = dyn_cast<AbstractFunctionDecl>(declRef->getDecl()))
-            return !fn->hasPolymorphicEffect(kind);
+            return fn->hasPolymorphicEffect(kind);
         }
       }
 
-      return true;
+      return false;
     };
 
-    // If we have a ClosureExpr, we can safely propagate 'async' to the closure.
+    // If we have a ClosureExpr, and we can safely propagate 'async' to the
+    // closure, do that here.
     fromEI = fromFunc->getExtInfo();
-    if (toEI.isAsync() && !fromEI.isAsync() && shouldApplyEffect(EffectKind::Async)) {
+    bool shouldPropagateAsync =
+        !isEffectPolymorphic(EffectKind::Async) || closureInheritsActorContext(expr);
+    if (toEI.isAsync() && !fromEI.isAsync() && shouldPropagateAsync) {
       auto newFromFuncType = fromFunc->withExtInfo(fromEI.withAsync());
       if (applyTypeToClosureExpr(cs, expr, newFromFuncType)) {
         fromFunc = newFromFuncType->castTo<FunctionType>();
@@ -7373,7 +7364,7 @@ Expr *ExprRewriter::convertLiteralInPlace(
   // initialize via the builtin protocol.
   if (builtinProtocol) {
     auto builtinConformance = TypeChecker::conformsToProtocol(
-        type, builtinProtocol, cs.DC);
+        type, builtinProtocol, cs.DC->getParentModule());
     if (builtinConformance) {
       // Find the witness that we'll use to initialize the type via a builtin
       // literal.
@@ -7396,7 +7387,8 @@ Expr *ExprRewriter::convertLiteralInPlace(
 
   // This literal type must conform to the (non-builtin) protocol.
   assert(protocol && "requirements should have stopped recursion");
-  auto conformance = TypeChecker::conformsToProtocol(type, protocol, cs.DC);
+  auto conformance = TypeChecker::conformsToProtocol(type, protocol,
+                                                     cs.DC->getParentModule());
   assert(conformance && "must conform to literal protocol");
 
   // Dig out the literal type and perform a builtin literal conversion to it.
@@ -7524,7 +7516,8 @@ ExprRewriter::buildDynamicCallable(ApplyExpr *apply, SelectedOverload selected,
     auto dictLitProto =
         ctx.getProtocol(KnownProtocolKind::ExpressibleByDictionaryLiteral);
     auto conformance =
-        TypeChecker::conformsToProtocol(argumentType, dictLitProto, cs.DC);
+        TypeChecker::conformsToProtocol(argumentType, dictLitProto,
+                                        cs.DC->getParentModule());
     auto keyType = conformance.getTypeWitnessByName(argumentType, ctx.Id_Key);
     auto valueType =
         conformance.getTypeWitnessByName(argumentType, ctx.Id_Value);
@@ -8316,7 +8309,7 @@ static Expr *wrapAsyncLetInitializer(
   ASTContext &ctx = dc->getASTContext();
   Expr *autoclosureExpr = cs.buildAutoClosureExpr(
       initializer, closureType, /*isDefaultWrappedValue=*/false,
-      /*isSpawnLetWrapper=*/true);
+      /*isAsyncLetWrapper=*/true);
 
   // Call the autoclosure so that the AST types line up. SILGen will ignore the
   // actual calls and translate them into a different mechanism.
@@ -8417,7 +8410,7 @@ static Optional<SolutionApplicationTarget> applySolutionToInitialization(
   // For an async let, wrap the initializer appropriately to make it a child
   // task.
   if (auto patternBinding = target.getInitializationPatternBindingDecl()) {
-    if (patternBinding->isSpawnLet()) {
+    if (patternBinding->isAsyncLet()) {
       resultTarget.setExpr(
           wrapAsyncLetInitializer(
             cs, resultTarget.getAsExpr(), resultTarget.getDeclContext()));
@@ -8462,7 +8455,7 @@ static Optional<SolutionApplicationTarget> applySolutionToForEachStmt(
       stmt->getAwaitLoc().isValid() ? 
         KnownProtocolKind::AsyncSequence : KnownProtocolKind::Sequence);
   auto sequenceConformance = TypeChecker::conformsToProtocol(
-      forEachStmtInfo.sequenceType, sequenceProto, cs.DC);
+      forEachStmtInfo.sequenceType, sequenceProto, cs.DC->getParentModule());
   assert(!sequenceConformance.isInvalid() &&
          "Couldn't find sequence conformance");
 

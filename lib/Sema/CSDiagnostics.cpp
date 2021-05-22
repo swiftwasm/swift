@@ -165,7 +165,8 @@ Type FailureDiagnostic::restoreGenericParameters(
 bool FailureDiagnostic::conformsToKnownProtocol(
     Type type, KnownProtocolKind protocol) const {
   auto &cs = getConstraintSystem();
-  return constraints::conformsToKnownProtocol(cs.DC, type, protocol);
+  return TypeChecker::conformsToKnownProtocol(type, protocol,
+                                              cs.DC->getParentModule());
 }
 
 Type RequirementFailure::getOwnerType() const {
@@ -456,7 +457,7 @@ bool MissingConformanceFailure::diagnoseAsError() {
   if (isPatternMatchingOperator(anchor)) {
     auto *expr = castToExpr(anchor);
     if (auto *binaryOp = dyn_cast_or_null<BinaryExpr>(findParentExpr(expr))) {
-      auto *caseExpr = binaryOp->getArg()->getElement(0);
+      auto *caseExpr = binaryOp->getLHS();
 
       llvm::SmallPtrSet<Expr *, 4> anchors;
       for (const auto *fix : getSolution().Fixes) {
@@ -2073,10 +2074,10 @@ AssignmentFailure::getMemberRef(ConstraintLocator *locator) const {
   if (!member->choice.isDecl())
     return member->choice;
 
-  auto *DC = getDC();
   auto *decl = member->choice.getDecl();
   if (isa<SubscriptDecl>(decl) &&
-      isValidDynamicMemberLookupSubscript(cast<SubscriptDecl>(decl), DC)) {
+      isValidDynamicMemberLookupSubscript(cast<SubscriptDecl>(decl),
+                                          getParentModule())) {
     auto *subscript = cast<SubscriptDecl>(decl);
     // If this is a keypath dynamic member lookup, we have to
     // adjust the locator to find member referred by it.
@@ -2754,7 +2755,7 @@ bool ContextualFailure::diagnoseThrowsTypeMismatch() const {
           Ctx.getProtocol(KnownProtocolKind::ErrorCodeProtocol)) {
     Type errorCodeType = getFromType();
     auto conformance = TypeChecker::conformsToProtocol(
-        errorCodeType, errorCodeProtocol, getDC());
+        errorCodeType, errorCodeProtocol, getParentModule());
     if (conformance) {
       Type errorType =
           conformance
@@ -2962,7 +2963,8 @@ bool ContextualFailure::tryProtocolConformanceFixIt(
   SmallVector<std::string, 8> missingProtoTypeStrings;
   SmallVector<ProtocolDecl *, 8> missingProtocols;
   for (auto protocol : layout.getProtocols()) {
-    if (!TypeChecker::conformsToProtocol(fromType, protocol->getDecl(), getDC())) {
+    if (!TypeChecker::conformsToProtocol(fromType, protocol->getDecl(),
+                                         getParentModule())) {
       missingProtoTypeStrings.push_back(protocol->getString());
       missingProtocols.push_back(protocol->getDecl());
     }
@@ -4078,11 +4080,9 @@ bool AllowTypeOrInstanceMemberFailure::diagnoseAsError() {
           ValueDecl *decl0 = overloadedFn->getDecls()[0];
           
           if (decl0->getBaseName() == decl0->getASTContext().Id_MatchOperator) {
-            assert(binaryExpr->getArg()->getElements().size() == 2);
-            
             // If the rhs of '~=' is the enum type, a single dot suffixes
             // since the type can be inferred
-            Type secondArgType = getType(binaryExpr->getArg()->getElement(1));
+            Type secondArgType = getType(binaryExpr->getRHS());
             if (secondArgType->isEqual(baseTy)) {
               Diag->fixItInsert(loc, ".");
               return true;
@@ -4984,20 +4984,69 @@ bool ExtraneousArgumentsFailure::diagnoseAsError() {
         params->getStartLoc(), diag::closure_argument_list_tuple, fnType,
         fnType->getNumParams(), params->size(), (params->size() == 1));
 
-    bool onlyAnonymousParams =
+    // Unsed parameter is represented by `_` before `in`.
+    bool onlyUnusedParams =
         std::all_of(params->begin(), params->end(),
                     [](ParamDecl *param) { return !param->hasName(); });
 
     // If closure expects no parameters but N was given,
-    // and all of them are anonymous let's suggest removing them.
-    if (fnType->getNumParams() == 0 && onlyAnonymousParams) {
+    // and all of them are unused, let's suggest removing them.
+    if (fnType->getNumParams() == 0 && onlyUnusedParams) {
       auto inLoc = closure->getInLoc();
       auto &sourceMgr = getASTContext().SourceMgr;
 
-      if (inLoc.isValid())
+      if (inLoc.isValid()) {
         diag.fixItRemoveChars(params->getStartLoc(),
                               Lexer::getLocForEndOfToken(sourceMgr, inLoc));
+        return true;
+      }
     }
+
+    diag.flush();
+
+    // If all of the parameters are anonymous, let's point out references
+    // to make it explicit where parameters are used in complex closure body,
+    // which helps in situations where braces are missing for potential inner
+    // closures e.g.
+    //
+    // func a(_: () -> Void) {}
+    // func b(_: (Int) -> Void) {}
+    //
+    // a {
+    //   ...
+    //   b($0.member)
+    // }
+    //
+    // Here `$0` is associated with `a` since braces around `member` reference
+    // are missing.
+    if (!closure->hasSingleExpressionBody() &&
+        llvm::all_of(params->getArray(),
+                     [](ParamDecl *P) { return P->isAnonClosureParam(); })) {
+      if (auto *body = closure->getBody()) {
+        struct ParamRefFinder : public ASTWalker {
+          DiagnosticEngine &D;
+          ParameterList *Params;
+
+          ParamRefFinder(DiagnosticEngine &diags, ParameterList *params)
+              : D(diags), Params(params) {}
+
+          std::pair<bool, Expr *> walkToExprPre(Expr *E) override {
+            if (auto *DRE = dyn_cast<DeclRefExpr>(E)) {
+              if (llvm::is_contained(Params->getArray(), DRE->getDecl())) {
+                auto *P = cast<ParamDecl>(DRE->getDecl());
+                D.diagnose(DRE->getLoc(), diag::use_of_anon_closure_param,
+                           P->getName());
+              }
+            }
+            return {true, E};
+          }
+        };
+
+        ParamRefFinder finder(getASTContext().Diags, params);
+        body->walk(finder);
+      }
+    }
+
     return true;
   }
 
@@ -6103,8 +6152,8 @@ bool ArgumentMismatchFailure::diagnoseUseOfReferenceEqualityOperator() const {
     return false;
 
   auto *binaryOp = castToExpr<BinaryExpr>(getRawAnchor());
-  auto *lhs = binaryOp->getArg()->getElement(0);
-  auto *rhs = binaryOp->getArg()->getElement(1);
+  auto *lhs = binaryOp->getLHS();
+  auto *rhs = binaryOp->getRHS();
 
   auto name = *getOperatorName(binaryOp->getFn());
 
@@ -6170,8 +6219,8 @@ bool ArgumentMismatchFailure::diagnosePatternMatchingMismatch() const {
     return false;
 
   auto *op = castToExpr<BinaryExpr>(getRawAnchor());
-  auto *lhsExpr = op->getArg()->getElement(0);
-  auto *rhsExpr = op->getArg()->getElement(1);
+  auto *lhsExpr = op->getLHS();
+  auto *rhsExpr = op->getRHS();
 
   auto lhsType = getType(lhsExpr);
   auto rhsType = getType(rhsExpr);
@@ -6770,13 +6819,9 @@ bool UnableToInferClosureParameterType::diagnoseAsError() {
   llvm::SmallString<16> id;
   llvm::raw_svector_ostream OS(id);
 
-  if (PD->isAnonClosureParam()) {
-    OS << "$" << paramIdx;
-  } else {
-    OS << "'" << PD->getParameterName() << "'";
-  }
+  OS << "'" << PD->getParameterName() << "'";
 
-  auto loc = PD->isAnonClosureParam() ? getLoc() : PD->getLoc();
+  auto loc = PD->isImplicit() ? getLoc() : PD->getLoc();
   emitDiagnosticAt(loc, diag::cannot_infer_closure_parameter_type, OS.str());
   return true;
 }

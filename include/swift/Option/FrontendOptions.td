@@ -126,9 +126,6 @@ def diagnostic_documentation_path
   : Separate<["-"], "diagnostic-documentation-path">, MetaVarName<"<path>">,
   HelpText<"Path to diagnostic documentation resources">;
 
-def enable_swiftcall : Flag<["-"], "enable-swiftcall">,
-  HelpText<"Enable the use of LLVM swiftcall support">;
-
 def enable_testable_attr_requires_testable_module :
   Flag<["-"], "enable-testable-attr-requires-testable-module">,
   HelpText<"Enable checking of @testable">;
@@ -228,10 +225,6 @@ let Flags = [FrontendOption, NoDriverOption, HelpHidden, ModuleInterfaceOption] 
 def enable_experimental_concurrency :
   Flag<["-"], "enable-experimental-concurrency">,
   HelpText<"Enable experimental concurrency model">;
-
-def enable_experimental_async_handler :
-  Flag<["-"], "enable-experimental-async-handler">,
-  HelpText<"Enable experimental @asyncHandler feature">;
 
 def enable_experimental_flow_sensitive_concurrent_captures :
   Flag<["-"], "enable-experimental-flow-sensitive-concurrent-captures">,
@@ -694,6 +687,13 @@ def prebuilt_module_cache_path :
 def prebuilt_module_cache_path_EQ :
   Joined<["-"], "prebuilt-module-cache-path=">,
   Alias<prebuilt_module_cache_path>;
+
+def backup_module_interface_path :
+  Separate<["-"], "backup-module-interface-path">,
+  HelpText<"Directory of module interfaces as backups to those from SDKs">;
+def backup_module_interface_path_EQ :
+  Joined<["-"], "backup-module-interface-path=">,
+  Alias<backup_module_interface_path>;
 
 def force_public_linkage : Flag<["-"], "force-public-linkage">,
    HelpText<"Force public linkage for private symbols. Used by LLDB.">;

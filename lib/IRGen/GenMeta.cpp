@@ -916,6 +916,10 @@ namespace {
         if (!entry.isValid() || entry.getKind() != SILWitnessTable::Method ||
             entry.getMethodWitness().Requirement != func)
           continue;
+        auto silFunc = entry.getMethodWitness().Witness;
+        if (silFunc->isAsync()) {
+          return IGM.getAddrOfAsyncFunctionPointer(silFunc);
+        }
         if (!entry.getMethodWitness().Witness)
           continue;
         return IGM.getAddrOfSILFunction(entry.getMethodWitness().Witness,

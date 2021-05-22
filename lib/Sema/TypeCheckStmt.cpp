@@ -764,7 +764,6 @@ public:
       assert(DiagnosticSuppression::isEnabled(getASTContext().Diags) &&
              "Diagnosing and AllowUnresolvedTypeVariables don't seem to mix");
       options |= TypeCheckExprFlags::LeaveClosureBodyUnchecked;
-      options |= TypeCheckExprFlags::AllowUnresolvedTypeVariables;
     }
 
     ContextualTypePurpose ctp = CTP_ReturnStmt;
@@ -1456,8 +1455,8 @@ void TypeChecker::checkIgnoredExpr(Expr *E) {
     
     SourceRange SR1 = call->getArg()->getSourceRange(), SR2;
     if (auto *BO = dyn_cast<BinaryExpr>(call)) {
-      SR1 = BO->getArg()->getElement(0)->getSourceRange();
-      SR2 = BO->getArg()->getElement(1)->getSourceRange();
+      SR1 = BO->getLHS()->getSourceRange();
+      SR2 = BO->getRHS()->getSourceRange();
     }
     
     // Otherwise, produce a generic diagnostic.
@@ -1506,7 +1505,6 @@ void StmtChecker::typeCheckASTNode(ASTNode &node) {
       options |= TypeCheckExprFlags::IsDiscarded;
     if (LeaveBraceStmtBodyUnchecked) {
       options |= TypeCheckExprFlags::LeaveClosureBodyUnchecked;
-      options |= TypeCheckExprFlags::AllowUnresolvedTypeVariables;
     }
 
     auto resultTy =

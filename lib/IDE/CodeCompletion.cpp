@@ -1669,6 +1669,8 @@ public:
   void completeGenericRequirement() override;
   void completeAfterIfStmt(bool hasElse) override;
   void completeStmtLabel(StmtKind ParentKind) override;
+  void completeForEachPatternBeginning(bool hasTry, bool hasAwait) override;
+  void completeTypeAttrBeginning() override;
 
   void doneParsing() override;
 
@@ -1882,6 +1884,10 @@ public:
   bool FoundFunctionsWithoutFirstKeyword = false;
 
 private:
+  bool isForCaching() const {
+    return Kind == LookupKind::ImportFromModule;
+  }
+
   void foundFunction(const AbstractFunctionDecl *AFD) {
     FoundFunctionCalls = true;
     const DeclName Name = AFD->getName();
@@ -2077,6 +2083,12 @@ public:
     IncludeInstanceMembers = true;
   }
 
+  bool isHiddenModuleName(Identifier Name) {
+    return (Name.str().startswith("_") ||
+            Name == Ctx.SwiftShimsModuleName ||
+            Name.str() == SWIFT_ONONE_SUPPORT);
+  }
+
   void addSubModuleNames(std::vector<std::pair<std::string, bool>>
       &SubModuleNameVisibilityPairs) {
     for (auto &Pair : SubModuleNameVisibilityPairs) {
@@ -2141,10 +2153,7 @@ public:
 
     auto mainModuleName = CurrModule->getName();
     for (auto ModuleName : ModuleNames) {
-      if (ModuleName.str().startswith("_") ||
-          ModuleName == mainModuleName ||
-          ModuleName == Ctx.SwiftShimsModuleName ||
-          ModuleName.str() == SWIFT_ONONE_SUPPORT)
+      if (ModuleName == mainModuleName || isHiddenModuleName(ModuleName))
         continue;
 
       auto MD = ModuleDecl::create(ModuleName, Ctx);
@@ -2538,20 +2547,21 @@ public:
 
     // If the reference is 'async', all types must be 'Sendable'.
     if (implicitlyAsync && T) {
+      auto *M = CurrDeclContext->getParentModule();
       if (isa<VarDecl>(VD)) {
-        if (!isSendableType(CurrDeclContext, T)) {
+        if (!isSendableType(M, T)) {
           NotRecommended = NotRecommendedReason::CrossActorReference;
         }
       } else {
         assert(isa<FuncDecl>(VD) || isa<SubscriptDecl>(VD));
         // Check if the result and the param types are all 'Sendable'.
         auto *AFT = T->castTo<AnyFunctionType>();
-        if (!isSendableType(CurrDeclContext, AFT->getResult())) {
+        if (!isSendableType(M, AFT->getResult())) {
           NotRecommended = NotRecommendedReason::CrossActorReference;
         } else {
           for (auto &param : AFT->getParams()) {
             Type paramType = param.getPlainType();
-            if (!isSendableType(CurrDeclContext, paramType)) {
+            if (!isSendableType(M, paramType)) {
               NotRecommended = NotRecommendedReason::CrossActorReference;
               break;
             }
@@ -2583,7 +2593,8 @@ public:
     }
     bool implicitlyAsync = false;
     analyzeActorIsolation(VD, VarType, implicitlyAsync, NotRecommended);
-    if (!NotRecommended && implicitlyAsync && !CanCurrDeclContextHandleAsync) {
+    if (!isForCaching() && !NotRecommended && implicitlyAsync &&
+        !CanCurrDeclContextHandleAsync) {
       NotRecommended = NotRecommendedReason::InvalidAsyncContext;
     }
 
@@ -2925,7 +2936,7 @@ public:
       else
         addTypeAnnotation(Builder, AFT->getResult(), genericSig);
 
-      if (AFT->isAsync() && !CanCurrDeclContextHandleAsync) {
+      if (!isForCaching() && AFT->isAsync() && !CanCurrDeclContextHandleAsync) {
         Builder.setNotRecommended(NotRecommendedReason::InvalidAsyncContext);
       }
     };
@@ -3039,7 +3050,8 @@ public:
     bool implictlyAsync = false;
     analyzeActorIsolation(FD, AFT, implictlyAsync, NotRecommended);
 
-    if (!NotRecommended && !IsImplicitlyCurriedInstanceMethod &&
+    if (!isForCaching() && !NotRecommended &&
+        !IsImplicitlyCurriedInstanceMethod &&
         ((AFT && AFT->isAsync()) || implictlyAsync) &&
         !CanCurrDeclContextHandleAsync) {
       NotRecommended = NotRecommendedReason::InvalidAsyncContext;
@@ -3239,7 +3251,8 @@ public:
         addTypeAnnotation(Builder, *Result, CD->getGenericSignatureOfContext());
       }
 
-      if (ConstructorType->isAsync() && !CanCurrDeclContextHandleAsync) {
+      if (!isForCaching() && ConstructorType->isAsync() &&
+          !CanCurrDeclContextHandleAsync) {
         Builder.setNotRecommended(NotRecommendedReason::InvalidAsyncContext);
       }
     };
@@ -3290,7 +3303,8 @@ public:
     bool implictlyAsync = false;
     analyzeActorIsolation(SD, subscriptType, implictlyAsync, NotRecommended);
 
-    if (!NotRecommended && implictlyAsync && !CanCurrDeclContextHandleAsync) {
+    if (!isForCaching() && !NotRecommended && implictlyAsync &&
+        !CanCurrDeclContextHandleAsync) {
       NotRecommended = NotRecommendedReason::InvalidAsyncContext;
     }
 
@@ -4345,28 +4359,31 @@ public:
       builder.addRightBracket();
     });
 
-    auto floatType = context.getFloatType();
-    addFromProto(LK::ColorLiteral, [&](Builder &builder) {
-      builder.addBaseName("#colorLiteral");
-      builder.addLeftParen();
-      builder.addCallParameter(context.getIdentifier("red"), floatType);
-      builder.addComma();
-      builder.addCallParameter(context.getIdentifier("green"), floatType);
-      builder.addComma();
-      builder.addCallParameter(context.getIdentifier("blue"), floatType);
-      builder.addComma();
-      builder.addCallParameter(context.getIdentifier("alpha"), floatType);
-      builder.addRightParen();
-    });
+    // Optionally add object literals.
+    if (CompletionContext->includeObjectLiterals()) {
+      auto floatType = context.getFloatType();
+      addFromProto(LK::ColorLiteral, [&](Builder &builder) {
+        builder.addBaseName("#colorLiteral");
+        builder.addLeftParen();
+        builder.addCallParameter(context.getIdentifier("red"), floatType);
+        builder.addComma();
+        builder.addCallParameter(context.getIdentifier("green"), floatType);
+        builder.addComma();
+        builder.addCallParameter(context.getIdentifier("blue"), floatType);
+        builder.addComma();
+        builder.addCallParameter(context.getIdentifier("alpha"), floatType);
+        builder.addRightParen();
+      });
 
-    auto stringType = context.getStringType();
-    addFromProto(LK::ImageLiteral, [&](Builder &builder) {
-      builder.addBaseName("#imageLiteral");
-      builder.addLeftParen();
-      builder.addCallParameter(context.getIdentifier("resourceName"),
-                               stringType);
-      builder.addRightParen();
-    });
+      auto stringType = context.getStringType();
+      addFromProto(LK::ImageLiteral, [&](Builder &builder) {
+        builder.addBaseName("#imageLiteral");
+        builder.addLeftParen();
+        builder.addCallParameter(context.getIdentifier("resourceName"),
+                                 stringType);
+        builder.addRightParen();
+      });
+    }
 
     // Add tuple completion (item, item).
     {
@@ -4696,6 +4713,22 @@ public:
         addDeclAttrParamKeyword("deprecated", "Specify version number", true);
       }
     }
+  }
+
+  void getTypeAttributeKeywordCompletions() {
+    auto addTypeAttr = [&](StringRef Name) {
+      CodeCompletionResultBuilder Builder(
+          Sink,
+          CodeCompletionResult::ResultKind::Keyword,
+          SemanticContextKind::None, expectedTypeContext);
+      Builder.addAttributeKeyword(Name, "Type Attribute");
+    };
+    addTypeAttr("autoclosure");
+    addTypeAttr("convention(swift)");
+    addTypeAttr("convention(block)");
+    addTypeAttr("convention(c)");
+    addTypeAttr("convention(thin)");
+    addTypeAttr("escaping");
   }
 
   void collectPrecedenceGroups() {
@@ -5820,6 +5853,22 @@ void CodeCompletionCallbacksImpl::completeStmtLabel(StmtKind ParentKind) {
   ParentStmtKind = ParentKind;
 }
 
+void CodeCompletionCallbacksImpl::completeForEachPatternBeginning(
+    bool hasTry, bool hasAwait) {
+  CurDeclContext = P.CurDeclContext;
+  Kind = CompletionKind::ForEachPatternBeginning;
+  ParsedKeywords.clear();
+  if (hasTry)
+    ParsedKeywords.emplace_back("try");
+  if (hasAwait)
+    ParsedKeywords.emplace_back("await");
+}
+
+void CodeCompletionCallbacksImpl::completeTypeAttrBeginning() {
+  CurDeclContext = P.CurDeclContext;
+  Kind = CompletionKind::TypeAttrBeginning;
+}
+
 static bool isDynamicLookup(Type T) {
   return T->getRValueType()->isAnyObject();
 }
@@ -5945,7 +5994,6 @@ void CodeCompletionCallbacksImpl::addKeywords(CodeCompletionResultSink &Sink,
   case CompletionKind::PoundAvailablePlatform:
   case CompletionKind::Import:
   case CompletionKind::UnresolvedMember:
-  case CompletionKind::CallArg:
   case CompletionKind::LabeledTrailingClosure:
   case CompletionKind::AfterPoundExpr:
   case CompletionKind::AfterPoundDirective:
@@ -5955,6 +6003,7 @@ void CodeCompletionCallbacksImpl::addKeywords(CodeCompletionResultSink &Sink,
   case CompletionKind::KeyPathExprSwift:
   case CompletionKind::PrecedenceGroup:
   case CompletionKind::StmtLabel:
+  case CompletionKind::TypeAttrBeginning:
     break;
 
   case CompletionKind::EffectsSpecifier: {
@@ -5998,12 +6047,19 @@ void CodeCompletionCallbacksImpl::addKeywords(CodeCompletionResultSink &Sink,
     addAnyTypeKeyword(Sink, CurDeclContext->getASTContext().TheAnyType);
     break;
 
+  case CompletionKind::CallArg:
+  case CompletionKind::PostfixExprParen:
+    // Note that we don't add keywords here as the completion might be for
+    // an argument list pattern. We instead add keywords later in
+    // CodeCompletionCallbacksImpl::doneParsing when we know we're not
+    // completing for a argument list pattern.
+    break;
+
   case CompletionKind::CaseStmtKeyword:
     addCaseStmtKeywords(Sink);
     break;
 
   case CompletionKind::PostfixExpr:
-  case CompletionKind::PostfixExprParen:
   case CompletionKind::CaseStmtBeginning:
   case CompletionKind::TypeIdentifierWithDot:
   case CompletionKind::TypeIdentifierWithoutDot:
@@ -6055,6 +6111,13 @@ void CodeCompletionCallbacksImpl::addKeywords(CodeCompletionResultSink &Sink,
   case CompletionKind::AfterIfStmtElse:
     addKeyword(Sink, "if", CodeCompletionKeywordKind::kw_if);
     break;
+  case CompletionKind::ForEachPatternBeginning:
+    if (!llvm::is_contained(ParsedKeywords, "try"))
+      addKeyword(Sink, "try", CodeCompletionKeywordKind::kw_try);
+    if (!llvm::is_contained(ParsedKeywords, "await"))
+      addKeyword(Sink, "await", CodeCompletionKeywordKind::None);
+    addKeyword(Sink, "var", CodeCompletionKeywordKind::kw_var);
+    addKeyword(Sink, "case", CodeCompletionKeywordKind::kw_case);
   }
 }
 
@@ -6180,6 +6243,25 @@ static void deliverCompletionResults(CodeCompletionContext &CompletionContext,
   llvm::SmallPtrSet<Identifier, 8> seenModuleNames;
   std::vector<RequestedCachedModule> RequestedModules;
 
+  SmallPtrSet<ModuleDecl *, 4> explictlyImportedModules;
+  {
+    // Collect modules directly imported in this SourceFile.
+    SmallVector<ImportedModule, 4> directImport;
+    SF.getImportedModules(directImport,
+                          {ModuleDecl::ImportFilterKind::Default,
+                           ModuleDecl::ImportFilterKind::ImplementationOnly});
+    for (auto import : directImport)
+      explictlyImportedModules.insert(import.importedModule);
+
+    // Exclude modules implicitly imported in the current module.
+    auto implicitImports = SF.getParentModule()->getImplicitImports();
+    for (auto import : implicitImports.imports)
+      explictlyImportedModules.erase(import.module.importedModule);
+
+    // Consider the current module "explicit".
+    explictlyImportedModules.insert(SF.getParentModule());
+  }
+
   for (auto &Request: Lookup.RequestedCachedResults) {
     llvm::DenseSet<CodeCompletionCache::Key> ImportsSeen;
     auto handleImport = [&](ImportedModule Import) {
@@ -6228,8 +6310,11 @@ static void deliverCompletionResults(CodeCompletionContext &CompletionContext,
         RequestedModules.push_back({std::move(K), TheModule,
           Request.OnlyTypes, Request.OnlyPrecedenceGroups});
 
+        auto TheModuleName = TheModule->getName();
         if (Request.IncludeModuleQualifier &&
-            seenModuleNames.insert(TheModule->getName()).second)
+            (!Lookup.isHiddenModuleName(TheModuleName) ||
+             explictlyImportedModules.contains(TheModule)) &&
+            seenModuleNames.insert(TheModuleName).second)
           Lookup.addModuleName(TheModule);
       }
     };
@@ -6593,6 +6678,13 @@ void CodeCompletionCallbacksImpl::doneParsing() {
     if (isDynamicLookup(*ExprType))
       Lookup.setIsDynamicLookup();
     Lookup.getValueExprCompletions(*ExprType, ReferencedDecl.getDecl());
+    /// We set the type of ParsedExpr explicitly above. But we don't want an
+    /// unresolved type in our AST when we type check again for operator
+    /// completions. Remove the type of the ParsedExpr and see if we can come up
+    /// with something more useful based on the the full sequence expression.
+    if (ParsedExpr->getType()->is<UnresolvedType>()) {
+      ParsedExpr->setType(nullptr);
+    }
     Lookup.getOperatorCompletions(ParsedExpr, leadingSequenceExprs);
     Lookup.getPostfixKeywordCompletions(*ExprType, ParsedExpr);
     break;
@@ -6627,6 +6719,11 @@ void CodeCompletionCallbacksImpl::doneParsing() {
       Lookup.setExpectedTypes(ContextInfo.getPossibleTypes(),
                               ContextInfo.isImplicitSingleExpressionReturn());
       Lookup.setHaveLParen(false);
+
+      // Add any keywords that can be used in an argument expr position.
+      addSuperKeyword(CompletionContext.getResultSink());
+      addExprKeywords(CompletionContext.getResultSink());
+
       DoPostfixExprBeginning();
     }
     break;
@@ -6768,6 +6865,11 @@ void CodeCompletionCallbacksImpl::doneParsing() {
     if (shouldPerformGlobalCompletion) {
       Lookup.setExpectedTypes(ContextInfo.getPossibleTypes(),
                               ContextInfo.isImplicitSingleExpressionReturn());
+
+      // Add any keywords that can be used in an argument expr position.
+      addSuperKeyword(CompletionContext.getResultSink());
+      addExprKeywords(CompletionContext.getResultSink());
+
       DoPostfixExprBeginning();
     }
     break;
@@ -6942,9 +7044,19 @@ void CodeCompletionCallbacksImpl::doneParsing() {
     Lookup.getStmtLabelCompletions(Loc, ParentStmtKind == StmtKind::Continue);
     break;
   }
+  case CompletionKind::TypeAttrBeginning: {
+    Lookup.getTypeAttributeKeywordCompletions();
+
+    // Type names at attribute position after '@'.
+    Lookup.getTypeCompletionsInDeclContext(
+      P.Context.SourceMgr.getCodeCompletionLoc());
+    break;
+
+  }
   case CompletionKind::AfterIfStmtElse:
   case CompletionKind::CaseStmtKeyword:
   case CompletionKind::EffectsSpecifier:
+  case CompletionKind::ForEachPatternBeginning:
     // Handled earlier by keyword completions.
     break;
   }
@@ -7019,7 +7131,10 @@ void swift::ide::lookupCodeCompletionResultsFromModule(
     CodeCompletionResultSink &targetSink, const ModuleDecl *module,
     ArrayRef<std::string> accessPath, bool needLeadingDot,
     const DeclContext *currDeclContext) {
-  CompletionLookup Lookup(targetSink, module->getASTContext(), currDeclContext);
+  // Consisitently use the SourceFile as the decl context, to avoid decl
+  // context specific behaviors.
+  auto *SF = currDeclContext->getParentSourceFile();
+  CompletionLookup Lookup(targetSink, module->getASTContext(), SF);
   Lookup.lookupExternalModuleDecls(module, accessPath, needLeadingDot);
 }
 

@@ -66,6 +66,9 @@ bool ArgsToFrontendOptionsConverter::convert(
   if (const Arg *A = Args.getLastArg(OPT_prebuilt_module_cache_path)) {
     Opts.PrebuiltModuleCachePath = A->getValue();
   }
+  if (const Arg *A = Args.getLastArg(OPT_backup_module_interface_path)) {
+    Opts.BackupModuleInterfaceDir = A->getValue();
+  }
   if (const Arg *A = Args.getLastArg(OPT_bridging_header_directory_for_print)) {
     Opts.BridgingHeaderDirForPrint = A->getValue();
   }
@@ -103,7 +106,11 @@ bool ArgsToFrontendOptionsConverter::convert(
   }
 
   if (auto A = Args.getLastArg(OPT_user_module_version)) {
-    if (Opts.UserModuleVersion.tryParse(StringRef(A->getValue()))) {
+    StringRef raw(A->getValue());
+    while(raw.count('.') > 3) {
+      raw = raw.rsplit('.').first;
+    }
+    if (Opts.UserModuleVersion.tryParse(raw)) {
       Diags.diagnose(SourceLoc(), diag::error_invalid_arg_value,
                      A->getAsString(Args), A->getValue());
     }

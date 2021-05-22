@@ -802,29 +802,11 @@ namespace swift {
 
     bool isPrettyPrintingDecl() const { return IsPrettyPrintingDecl; }
 
-    void setLocalization(std::string locale, std::string path) {
+    void setLocalization(StringRef locale, StringRef path) {
       assert(!locale.empty());
       assert(!path.empty());
-      llvm::SmallString<128> filePath(path);
-      llvm::sys::path::append(filePath, locale);
-      llvm::sys::path::replace_extension(filePath, ".db");
-
-      // If the serialized diagnostics file not available,
-      // fallback to the `YAML` file.
-      if (llvm::sys::fs::exists(filePath)) {
-        if (auto file = llvm::MemoryBuffer::getFile(filePath)) {
-          localization = std::make_unique<diag::SerializedLocalizationProducer>(
-              std::move(file.get()), getPrintDiagnosticNames());
-        }
-      } else {
-        llvm::sys::path::replace_extension(filePath, ".yaml");
-        // In case of missing localization files, we should fallback to messages
-        // from `.def` files.
-        if (llvm::sys::fs::exists(filePath)) {
-          localization = std::make_unique<diag::YAMLLocalizationProducer>(
-              filePath.str(), getPrintDiagnosticNames());
-        }
-      }
+      localization = diag::LocalizationProducer::producerFor(
+          locale, path, getPrintDiagnosticNames());
     }
 
     void ignoreDiagnostic(DiagID id) {
@@ -1017,6 +999,12 @@ namespace swift {
     /// diagnostic.
     bool isAPIDigesterBreakageDiagnostic(DiagID id) const;
 
+    /// \returns true if the diagnostic is marking a deprecation.
+    bool isDeprecationDiagnostic(DiagID id) const;
+
+    /// \returns true if the diagnostic is marking an unused element.
+    bool isNoUsageDiagnostic(DiagID id) const;
+
     /// \returns true if any diagnostic consumer gave an error while invoking
     //// \c finishProcessing.
     bool finishProcessing();
@@ -1054,6 +1042,8 @@ namespace swift {
   public:
     llvm::StringRef diagnosticStringFor(const DiagID id,
                                         bool printDiagnosticNames);
+
+    static llvm::StringRef diagnosticIDStringFor(const DiagID id);
 
     /// If there is no clear .dia file for a diagnostic, put it in the one
     /// corresponding to the SourceLoc given here.

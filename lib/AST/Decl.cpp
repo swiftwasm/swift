@@ -1581,9 +1581,9 @@ StaticSpellingKind PatternBindingDecl::getCorrectStaticSpelling() const {
   return getCorrectStaticSpellingForDecl(this);
 }
 
-bool PatternBindingDecl::isSpawnLet() const {
+bool PatternBindingDecl::isAsyncLet() const {
   if (auto var = getAnchoringVarDecl(0))
-    return var->isSpawnLet();
+    return var->isAsyncLet();
 
   return false;
 }
@@ -5877,7 +5877,7 @@ bool VarDecl::isMemberwiseInitialized(bool preferDeclaredProperties) const {
   return true;
 }
 
-bool VarDecl::isSpawnLet() const {
+bool VarDecl::isAsyncLet() const {
   return getAttrs().hasAttribute<AsyncAttr>() || getAttrs().hasAttribute<SpawnAttr>();
 }
 
@@ -5936,17 +5936,33 @@ llvm::TinyPtrVector<CustomAttr *> VarDecl::getAttachedPropertyWrappers() const {
 
 /// Whether this property has any attached property wrappers.
 bool VarDecl::hasAttachedPropertyWrapper() const {
-  return !getAttachedPropertyWrappers().empty() || hasImplicitPropertyWrapper();
+  if (getAttrs().hasAttribute<CustomAttr>()) {
+    if (!getAttachedPropertyWrappers().empty())
+      return true;
+  }
+
+  if (hasImplicitPropertyWrapper())
+    return true;
+
+  return false;
 }
 
 bool VarDecl::hasImplicitPropertyWrapper() const {
-  if (!getAttachedPropertyWrappers().empty())
+  if (getAttrs().hasAttribute<CustomAttr>()) {
+    if (!getAttachedPropertyWrappers().empty())
+      return false;
+  }
+
+  if (isImplicit())
     return false;
 
-  auto *dc = getDeclContext();
-  bool isClosureParam = isa<ParamDecl>(this) &&
-      dc->getContextKind() == DeclContextKind::AbstractClosureExpr;
-  return !isImplicit() && getName().hasDollarPrefix() && isClosureParam;
+  if (!isa<ParamDecl>(this))
+    return false;
+
+  if (!isa<AbstractClosureExpr>(getDeclContext()))
+    return false;
+
+  return getName().hasDollarPrefix();
 }
 
 bool VarDecl::hasExternalPropertyWrapper() const {
@@ -6939,28 +6955,6 @@ bool AbstractFunctionDecl::argumentNameIsAPIByDefault() const {
 
 bool AbstractFunctionDecl::isSendable() const {
   return getAttrs().hasAttribute<SendableAttr>();
-}
-
-bool AbstractFunctionDecl::isAsyncHandler() const {
-  auto func = dyn_cast<FuncDecl>(this);
-  if (!func)
-    return false;
-
-  auto mutableFunc = const_cast<FuncDecl *>(func);
-  return evaluateOrDefault(getASTContext().evaluator,
-                           IsAsyncHandlerRequest{mutableFunc},
-                           false);
-}
-
-bool AbstractFunctionDecl::canBeAsyncHandler() const {
-  auto func = dyn_cast<FuncDecl>(this);
-  if (!func)
-    return false;
-
-  auto mutableFunc = const_cast<FuncDecl *>(func);
-  return evaluateOrDefault(getASTContext().evaluator,
-                           CanBeAsyncHandlerRequest{mutableFunc},
-                           false);
 }
 
 BraceStmt *AbstractFunctionDecl::getBody(bool canSynthesize) const {

@@ -129,6 +129,13 @@ void CompilerInvocation::setDefaultPrebuiltCacheIfNecessary() {
 
   FrontendOpts.PrebuiltModuleCachePath = computePrebuiltCachePath(
       SearchPathOpts.RuntimeResourcePath, LangOpts.Target, LangOpts.SDKVersion);
+  if (!FrontendOpts.PrebuiltModuleCachePath.empty())
+    return;
+  StringRef anchor = "prebuilt-modules";
+  assert(((StringRef)FrontendOpts.PrebuiltModuleCachePath).contains(anchor));
+  auto pair = ((StringRef)FrontendOpts.PrebuiltModuleCachePath).split(anchor);
+  FrontendOpts.BackupModuleInterfaceDir =
+    (llvm::Twine(pair.first) + "preferred-interfaces" + pair.second).str();
 }
 
 static void updateRuntimeLibraryPaths(SearchPathOptions &SearchPathOpts,
@@ -348,14 +355,26 @@ static void SaveModuleInterfaceArgs(ModuleInterfaceOptions &Opts,
   if (!FOpts.InputsAndOutputs.hasModuleInterfaceOutputPath())
     return;
   ArgStringList RenderedArgs;
+  ArgStringList RenderedArgsIgnorable;
   for (auto A : Args) {
-    if (A->getOption().hasFlag(options::ModuleInterfaceOption))
+    if (A->getOption().hasFlag(options::ModuleInterfaceOptionIgnorable)) {
+      A->render(Args, RenderedArgsIgnorable);
+    } else if (A->getOption().hasFlag(options::ModuleInterfaceOption)) {
       A->render(Args, RenderedArgs);
+    }
   }
-  llvm::raw_string_ostream OS(Opts.Flags);
-  interleave(RenderedArgs,
-             [&](const char *Argument) { PrintArg(OS, Argument, StringRef()); },
-             [&] { OS << " "; });
+  {
+    llvm::raw_string_ostream OS(Opts.Flags);
+    interleave(RenderedArgs,
+               [&](const char *Argument) { PrintArg(OS, Argument, StringRef()); },
+               [&] { OS << " "; });
+  }
+  {
+    llvm::raw_string_ostream OS(Opts.IgnorableFlags);
+    interleave(RenderedArgsIgnorable,
+               [&](const char *Argument) { PrintArg(OS, Argument, StringRef()); },
+               [&] { OS << " "; });
+  }
 }
 
 static bool ParseLangArgs(LangOptions &Opts, ArgList &Args,
@@ -404,8 +423,6 @@ static bool ParseLangArgs(LangOptions &Opts, ArgList &Args,
     Args.hasFlag(OPT_enable_infer_public_concurrent_value,
                  OPT_disable_infer_public_concurrent_value,
                  false);
-  Opts.EnableExperimentalAsyncHandler |=
-    Args.hasArg(OPT_enable_experimental_async_handler);
   Opts.EnableExperimentalFlowSensitiveConcurrentCaptures |=
     Args.hasArg(OPT_enable_experimental_flow_sensitive_concurrent_captures);
 
@@ -1571,8 +1588,6 @@ static bool ParseIRGenArgs(IRGenOptions &Opts, ArgList &Args,
     // Disable type layouts at Onone except if explictly requested.
     Opts.UseTypeLayoutValueHandling = false;
   }
-
-  Opts.UseSwiftCall = Args.hasArg(OPT_enable_swiftcall);
 
   // This is set to true by default.
   Opts.UseIncrementalLLVMCodeGen &=

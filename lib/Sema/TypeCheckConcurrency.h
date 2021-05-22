@@ -38,15 +38,14 @@ class EnumElementDecl;
 class Expr;
 class FuncDecl;
 class Initializer;
-class LangOptions;
 class PatternBindingDecl;
 class ProtocolConformance;
 class TopLevelCodeDecl;
 class TypeBase;
 class ValueDecl;
 
-/// Add notes suggesting the addition of 'async' or '@asyncHandler', as
-/// appropriate, to a diagnostic for a function that isn't an async context.
+/// Add notes suggesting the addition of 'async', as appropriate,
+/// to a diagnostic for a function that isn't an async context.
 void addAsyncNotes(AbstractFunctionDecl const* func);
 
 /// Check actor isolation rules.
@@ -199,7 +198,7 @@ bool contextUsesConcurrencyFeatures(const DeclContext *dc);
 /// domain, including the substitutions so that (e.g.) we can consider the
 /// specific types at the use site.
 ///
-/// \param dc The declaration context from which the reference occurs. This is
+/// \param module The module from which the reference occurs. This is
 /// used to perform lookup of conformances to the \c Sendable protocol.
 ///
 /// \param loc The location at which the reference occurs, which will be
@@ -210,13 +209,9 @@ bool contextUsesConcurrencyFeatures(const DeclContext *dc);
 ///
 /// \returns true if an problem was detected, false otherwise.
 bool diagnoseNonConcurrentTypesInReference(
-    ConcreteDeclRef declRef, const DeclContext *dc, SourceLoc loc,
+    ConcreteDeclRef declRef, ModuleDecl *module, SourceLoc loc,
     ConcurrentReferenceKind refKind,
     DiagnosticBehavior behavior = DiagnosticBehavior::Unspecified);
-
-/// Whether we should diagnose cases where Sendable conformances are
-/// missing.
-bool shouldDiagnoseNonSendableViolations(const LangOptions &langOpts);
 
 /// How the concurrent value check should be performed.
 enum class SendableCheck {

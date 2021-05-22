@@ -1768,6 +1768,14 @@ Expr *CallExpr::getDirectCallee() const {
   }
 }
 
+BinaryExpr *BinaryExpr::create(ASTContext &ctx, Expr *lhs, Expr *fn, Expr *rhs,
+                               bool implicit, Type ty) {
+  auto *packedArg = TupleExpr::createImplicit(ctx, {lhs, rhs}, /*labels*/ {});
+  computeSingleArgumentType(ctx, packedArg, /*implicit*/ true,
+                            [](Expr *E) { return E->getType(); });
+  return new (ctx) BinaryExpr(fn, packedArg, implicit, ty);
+}
+
 SourceLoc DotSyntaxCallExpr::getLoc() const {
   if (isImplicit()) {
     SourceLoc baseLoc = getBase()->getLoc();
@@ -1931,10 +1939,11 @@ void AbstractClosureExpr::setParameterList(ParameterList *P) {
 Type AbstractClosureExpr::getResultType(
     llvm::function_ref<Type(Expr *)> getType) const {
   auto *E = const_cast<AbstractClosureExpr *>(this);
-  if (getType(E)->hasError())
-    return getType(E);
+  Type T = getType(E);
+  if (!T || T->hasError())
+    return T;
 
-  return getType(E)->castTo<FunctionType>()->getResult();
+  return T->castTo<FunctionType>()->getResult();
 }
 
 bool AbstractClosureExpr::isBodyThrowing() const {

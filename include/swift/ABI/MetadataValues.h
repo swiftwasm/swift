@@ -47,6 +47,9 @@ enum {
   /// in a default actor.
   NumWords_DefaultActor = 10,
 
+  /// The number of words in a task.
+  NumWords_AsyncTask = 16,
+
   /// The number of words in a task group.
   NumWords_TaskGroup = 32,
 
@@ -1983,7 +1986,8 @@ enum class JobKind : size_t {
 
   DefaultActorInline = First_Reserved,
   DefaultActorSeparate,
-  DefaultActorOverride
+  DefaultActorOverride,
+  NullaryContinuation
 };
 
 /// The priority of a job.  Higher priorities are larger values.
@@ -1999,7 +2003,7 @@ enum class JobPriority : size_t {
 };
 
 /// Flags for schedulable jobs.
-class JobFlags : public FlagSet<size_t> {
+class JobFlags : public FlagSet<uint32_t> {
 public:
   enum {
     Kind           = 0,
@@ -2018,7 +2022,7 @@ public:
     Task_IsContinuingAsyncTask      = 27,
   };
 
-  explicit JobFlags(size_t bits) : FlagSet(bits) {}
+  explicit JobFlags(uint32_t bits) : FlagSet(bits) {}
   JobFlags(JobKind kind) { setKind(kind); }
   JobFlags(JobKind kind, JobPriority priority) {
     setKind(kind);

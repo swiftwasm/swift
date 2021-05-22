@@ -86,10 +86,6 @@ static AsyncLetImpl *asImpl(const AsyncLet *alet) {
       const_cast<AsyncLet*>(alet));
 }
 
-static AsyncLet *asAbstract(AsyncLetImpl *alet) {
-  return reinterpret_cast<AsyncLet*>(alet);
-}
-
 // =============================================================================
 // ==== start ------------------------------------------------------------------
 
@@ -106,7 +102,7 @@ static void swift_asyncLet_startImpl(AsyncLet *alet,
   flags.task_setIsChildTask(true);
 
   auto childTaskAndContext = swift_task_create_async_let_future(
-      flags,
+      flags.getOpaqueValue(),
       futureResultType,
       closureEntryPoint,
       closureContext);
@@ -134,7 +130,6 @@ SWIFT_CC(swiftasync)
 static void swift_asyncLet_waitImpl(
     OpaqueValue *result, SWIFT_ASYNC_CONTEXT AsyncContext *rawContext,
     AsyncLet *alet, Metadata *T) {
-  auto waitingTask = swift_task_getCurrent();
   auto task = alet->getTask();
   swift_task_future_wait(result, rawContext, task, T);
 }

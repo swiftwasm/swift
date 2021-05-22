@@ -3516,6 +3516,20 @@ namespace {
             Impl.ImportedDecls.end())
           continue;
 
+        // If we encounter an IndirectFieldDecl, ensure that its parent is
+        // importable before attempting to import it because they are dependent
+        // when it comes to getter/setter generation.
+        if (const auto *ind = dyn_cast<clang::IndirectFieldDecl>(nd)) {
+          const clang::CXXRecordDecl *parentUnion =
+              (ind->getChainingSize() >= 2)
+                  ? dyn_cast<clang::CXXRecordDecl>(
+                        ind->getAnonField()->getParent())
+                  : nullptr;
+          if (parentUnion && parentUnion->isAnonymousStructOrUnion() &&
+              parentUnion->isUnion() && !isCxxRecordImportable(parentUnion))
+            continue;
+        }
+
         auto member = Impl.importDecl(nd, getActiveSwiftVersion());
         if (!member) {
           if (!isa<clang::TypeDecl>(nd) && !isa<clang::FunctionDecl>(nd)) {
@@ -8658,6 +8672,14 @@ void ClangImporter::Implementation::importAttributes(
         continue;
       }
 
+      // Hard-code @actorIndependent, until Objective-C clients start
+      // using nonisolated.
+      if (swiftAttr->getAttribute() == "@actorIndependent") {
+        auto attr = new (SwiftContext) NonisolatedAttr(/*isImplicit=*/true);
+        MappedDecl->getAttrs().add(attr);
+        continue;
+      }
+
       // Dig out a buffer with the attribute text.
       unsigned bufferID = getClangSwiftAttrSourceBuffer(
           swiftAttr->getAttribute());
@@ -9582,9 +9604,8 @@ ClangImporter::Implementation::createConstant(Identifier name, DeclContext *dc,
 
   // Mark the function transparent so that we inline it away completely.
   func->getAttrs().add(new (C) TransparentAttr(/*implicit*/ true));
-  auto actorIndependentAttr = new (C) ActorIndependentAttr(
-      ActorIndependentKind::Unsafe, /*IsImplicit=*/true);
-  var->getAttrs().add(actorIndependentAttr);
+  auto nonisolatedAttr = new (C) NonisolatedAttr(/*IsImplicit=*/true);
+  var->getAttrs().add(nonisolatedAttr);
 
   // Set the function up as the getter.
   makeComputed(var, func, nullptr);

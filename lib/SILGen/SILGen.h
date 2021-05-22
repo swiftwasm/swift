@@ -86,8 +86,6 @@ public:
   /// Set of delayed conformances that have already been forced.
   llvm::DenseSet<NormalProtocolConformance *> forcedConformances;
 
-  SILFunction *emitTopLevelFunction(SILLocation Loc);
-
   size_t anonymousSymbolCounter = 0;
 
   Optional<SILDeclRef> StringToNSStringFn;
@@ -131,7 +129,6 @@ public:
   Optional<FuncDecl*> ResumeUnsafeContinuation;
   Optional<FuncDecl*> ResumeUnsafeThrowingContinuation;
   Optional<FuncDecl*> ResumeUnsafeThrowingContinuationWithError;
-  Optional<FuncDecl*> RunAsyncHandler;
   Optional<FuncDecl*> CheckExpectedExecutor;
 
 public:
@@ -507,8 +504,6 @@ public:
   FuncDecl *getResumeUnsafeThrowingContinuation();
   /// Retrieve the _Concurrency._resumeUnsafeThrowingContinuationWithError intrinsic.
   FuncDecl *getResumeUnsafeThrowingContinuationWithError();
-  /// Retrieve the _Concurrency._runAsyncHandler intrinsic.
-  FuncDecl *getRunAsyncHandler();
   /// Retrieve the _Concurrency._runTaskForBridgedAsyncMethod intrinsic.
   FuncDecl *getRunTaskForBridgedAsyncMethod();
   /// Retrieve the _Concurrency._checkExpectedExecutor intrinsic.

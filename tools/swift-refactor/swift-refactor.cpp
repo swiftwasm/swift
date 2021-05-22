@@ -82,7 +82,9 @@ Action(llvm::cl::desc("kind:"), llvm::cl::init(RefactoringKind::None),
            clEnumValN(RefactoringKind::ConvertToAsync,
                       "convert-to-async", "Convert the entire function to async"),
            clEnumValN(RefactoringKind::AddAsyncAlternative,
-                      "add-async-alternative", "Add an async alternative of a function taking a callback")));
+                      "add-async-alternative", "Add an async alternative of a function taking a callback"),
+           clEnumValN(RefactoringKind::AddAsyncWrapper,
+                      "add-async-wrapper", "Add an async alternative that forwards onto the function taking a callback")));
 
 
 static llvm::cl::opt<std::string>
@@ -117,6 +119,10 @@ IsFunctionLike("is-function-like", llvm::cl::desc("The symbol being renamed is f
 static llvm::cl::opt<bool>
 IsNonProtocolType("is-non-protocol-type",
                   llvm::cl::desc("The symbol being renamed is a type and not a protocol"));
+
+static llvm::cl::opt<bool> EnableExperimentalConcurrency(
+    "enable-experimental-concurrency",
+    llvm::cl::desc("Whether to enable experimental concurrency or not"));
 
 enum class DumpType {
   REWRITTEN,
@@ -273,7 +279,9 @@ int main(int argc, char *argv[]) {
   Invocation.getLangOptions().AttachCommentsToDecls = true;
   Invocation.getLangOptions().CollectParsedToken = true;
   Invocation.getLangOptions().BuildSyntaxTree = true;
-  Invocation.getLangOptions().EnableExperimentalConcurrency = true;
+
+  if (options::EnableExperimentalConcurrency)
+    Invocation.getLangOptions().EnableExperimentalConcurrency = true;
 
   for (auto FileName : options::InputFilenames)
     Invocation.getFrontendOptions().InputsAndOutputs.addInputFile(FileName);

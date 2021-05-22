@@ -4532,11 +4532,6 @@ static void diagnoseComparisonWithNaN(const Expr *E, const DeclContext *DC) {
     void tryDiagnoseComparisonWithNaN(BinaryExpr *BE) {
       ValueDecl *comparisonDecl = nullptr;
 
-      // Comparison functions like == or <= take two arguments.
-      if (BE->getArg()->getNumElements() != 2) {
-        return;
-      }
-
       // Dig out the function declaration.
       if (auto Fn = BE->getFn()) {
         if (auto DSCE = dyn_cast<DotSyntaxCallExpr>(Fn)) {
@@ -4557,16 +4552,16 @@ static void diagnoseComparisonWithNaN(const Expr *E, const DeclContext *DC) {
         return;
       }
 
-      auto firstArg = BE->getArg()->getElement(0);
-      auto secondArg = BE->getArg()->getElement(1);
+      auto *firstArg = BE->getLHS();
+      auto *secondArg = BE->getRHS();
 
       // Both arguments must conform to FloatingPoint protocol.
-      if (!conformsToKnownProtocol(const_cast<DeclContext *>(DC),
-                                   firstArg->getType(),
-                                   KnownProtocolKind::FloatingPoint) ||
-          !conformsToKnownProtocol(const_cast<DeclContext *>(DC),
-                                   secondArg->getType(),
-                                   KnownProtocolKind::FloatingPoint)) {
+      if (!TypeChecker::conformsToKnownProtocol(firstArg->getType(),
+                                                KnownProtocolKind::FloatingPoint,
+                                                DC->getParentModule()) ||
+          !TypeChecker::conformsToKnownProtocol(secondArg->getType(),
+                                                KnownProtocolKind::FloatingPoint,
+                                                DC->getParentModule())) {
         return;
       }
 
