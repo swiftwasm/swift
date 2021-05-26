@@ -254,7 +254,7 @@ function(_add_host_variant_c_compile_flags target)
   if(LLVM_ENABLE_ASSERTIONS)
     target_compile_options(${target} PRIVATE $<$<COMPILE_LANGUAGE:C,CXX,OBJC,OBJCXX>:-UNDEBUG>)
   else()
-    target_compile_definitions(${target} PRIVATE $<$<COMPILE_LANGUAGE:C,CXX,OBJC,OBJCXX>:-DNDEBUG>)
+    target_compile_definitions(${target} PRIVATE $<$<COMPILE_LANGUAGE:C,CXX,OBJC,OBJCXX>:NDEBUG>)
   endif()
 
   if(SWIFT_ENABLE_RUNTIME_FUNCTION_COUNTERS)
@@ -391,6 +391,8 @@ endfunction()
 #   add_swift_host_library(name
 #     [SHARED]
 #     [STATIC]
+#     [OBJECT]
+#     [IGNORE_LLVM_UPDATE_COMPILE_FLAGS]
 #     [LLVM_LINK_COMPONENTS comp1 ...]
 #     source1 [source2 source3 ...])
 #
@@ -403,15 +405,25 @@ endfunction()
 # STATIC
 #   Build a static library.
 #
+# OBJECT
+#   Build an object library
+#
 # LLVM_LINK_COMPONENTS
 #   LLVM components this library depends on.
+#
+# IGNORE_LLVM_UPDATE_COMPILE_FLAGS
+#   If set do not use llvm_update_compile_flags to generate cflags/etc.  This is
+#   generally used when compiling a mixed c/c++/swift library and one wants to
+#   disable this for the swift part.
 #
 # source1 ...
 #   Sources to add into this library.
 function(add_swift_host_library name)
   set(options
         SHARED
-        STATIC)
+        STATIC
+        OBJECT
+        IGNORE_LLVM_UPDATE_COMPILE_FLAGS)
   set(single_parameter_options)
   set(multiple_parameter_options
         LLVM_LINK_COMPONENTS)
@@ -425,8 +437,8 @@ function(add_swift_host_library name)
 
   translate_flags(ASHL "${options}")
 
-  if(NOT ASHL_SHARED AND NOT ASHL_STATIC)
-    message(FATAL_ERROR "Either SHARED or STATIC must be specified")
+  if(NOT ASHL_SHARED AND NOT ASHL_STATIC AND NOT ASHL_OBJECT)
+    message(FATAL_ERROR "One of SHARED/STATIC/OBJECT must be specified")
   endif()
 
   if(XCODE)
@@ -451,11 +463,15 @@ function(add_swift_host_library name)
     set(libkind SHARED)
   elseif(ASHL_STATIC)
     set(libkind STATIC)
+  elseif(ASHL_OBJECT)
+    set(libkind OBJECT)
   endif()
 
   add_library(${name} ${libkind} ${ASHL_SOURCES})
   add_dependencies(${name} ${LLVM_COMMON_DEPENDS})
-  llvm_update_compile_flags(${name})
+  if (NOT ASHL_IGNORE_LLVM_UPDATE_COMPILE_FLAGS)
+    llvm_update_compile_flags(${name})
+  endif()
   swift_common_llvm_config(${name} ${ASHL_LLVM_LINK_COMPONENTS})
   set_output_directory(${name}
       BINARY_DIR ${SWIFT_RUNTIME_OUTPUT_INTDIR}

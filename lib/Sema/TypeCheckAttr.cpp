@@ -45,35 +45,6 @@
 using namespace swift;
 
 namespace {
-  /// This emits a diagnostic with a fixit to remove the attribute.
-  template<typename ...ArgTypes>
-  InFlightDiagnostic
-  diagnoseAndRemoveAttr(DiagnosticEngine &Diags, Decl *D, DeclAttribute *attr,
-                        ArgTypes &&...Args) {
-    attr->setInvalid();
-
-    assert(!D->hasClangNode() && "Clang importer propagated a bogus attribute");
-    if (!D->hasClangNode()) {
-      SourceLoc loc = attr->getLocation();
-#ifndef NDEBUG
-      if (!loc.isValid() && !attr->getAddedByAccessNote()) {
-        llvm::errs() << "Attribute '";
-        attr->print(llvm::errs());
-        llvm::errs() << "' has invalid location, failed to diagnose!\n";
-        assert(false && "Diagnosing attribute with invalid location");
-      }
-#endif
-      if (loc.isInvalid()) {
-        loc = D->getLoc();
-      }
-      if (loc.isValid()) {
-        return std::move(Diags.diagnose(loc, std::forward<ArgTypes>(Args)...)
-                            .fixItRemove(attr->getRangeWithAt()));
-      }
-    }
-    return InFlightDiagnostic();
-  }
-
 /// This visits each attribute on a decl.  The visitor should return true if
 /// the attribute is invalid and should be marked as such.
 class AttributeChecker : public AttributeVisitor<AttributeChecker> {
@@ -87,8 +58,8 @@ public:
   template<typename ...ArgTypes>
   InFlightDiagnostic diagnoseAndRemoveAttr(DeclAttribute *attr,
                                            ArgTypes &&...Args) {
-    return ::diagnoseAndRemoveAttr(Ctx.Diags, D, attr,
-                                   std::forward<ArgTypes>(Args)...);
+    return swift::diagnoseAndRemoveAttr(D, attr,
+                                        std::forward<ArgTypes>(Args)...);
   }
 
   template <typename... ArgTypes>
@@ -280,6 +251,7 @@ public:
   void visitTransposeAttr(TransposeAttr *attr);
 
   void visitActorAttr(ActorAttr *attr);
+  void visitActorIndependentAttr(ActorIndependentAttr *attr);
   void visitGlobalActorAttr(GlobalActorAttr *attr);
   void visitAsyncAttr(AsyncAttr *attr);
   void visitSpawnAttr(SpawnAttr *attr);
@@ -944,6 +916,7 @@ static bool checkObjCDeclContext(Decl *D) {
 }
 
 static void diagnoseObjCAttrWithoutFoundation(ObjCAttr *attr, Decl *decl,
+                                              ObjCReason reason,
                                               DiagnosticBehavior behavior) {
   auto *SF = decl->getDeclContext()->getParentSourceFile();
   assert(SF);
@@ -955,8 +928,7 @@ static void diagnoseObjCAttrWithoutFoundation(ObjCAttr *attr, Decl *decl,
   auto &ctx = SF->getASTContext();
 
   if (!ctx.LangOpts.EnableObjCInterop) {
-    ctx.Diags.diagnose(attr->getLocation(), diag::objc_interop_disabled)
-      .fixItRemove(attr->getRangeWithAt())
+    diagnoseAndRemoveAttr(decl, attr, diag::objc_interop_disabled)
       .limitBehavior(behavior);
     return;
   }
@@ -979,6 +951,7 @@ static void diagnoseObjCAttrWithoutFoundation(ObjCAttr *attr, Decl *decl,
                      ctx.Id_Foundation)
     .highlight(attr->getRangeWithAt())
     .limitBehavior(behavior);
+  reason.describe(decl);
 }
 
 void AttributeChecker::visitObjCAttr(ObjCAttr *attr) {
@@ -1021,8 +994,20 @@ void AttributeChecker::visitObjCAttr(ObjCAttr *attr) {
 
   if (error) {
     diagnoseAndRemoveAttr(attr, *error).limitBehavior(behavior);
+    reason.describe(D);
     return;
   }
+
+  auto correctNameUsingNewAttr = [&](ObjCAttr *newAttr) {
+    if (attr->isInvalid()) newAttr->setInvalid();
+    newAttr->setImplicit(attr->isImplicit());
+    newAttr->setNameImplicit(attr->isNameImplicit());
+    newAttr->setAddedByAccessNote(attr->getAddedByAccessNote());
+
+    D->getAttrs().add(newAttr);
+    D->getAttrs().removeAttribute(attr);
+    attr->setInvalid();
+  };
 
   // If there is a name, check whether the kind of name is
   // appropriate.
@@ -1043,24 +1028,31 @@ void AttributeChecker::visitObjCAttr(ObjCAttr *attr) {
         else {
           firstNameLoc = D->getLoc();
         }
-        diagnose(firstNameLoc, diag::objc_name_req_nullary,
-                 D->getDescriptiveKind())
-          .fixItRemoveChars(afterFirstNameLoc, attr->getRParenLoc())
-          .limitBehavior(behavior);
-        const_cast<ObjCAttr *>(attr)->setName(
-          ObjCSelector(Ctx, 0, objcName->getSelectorPieces()[0]),
-          /*implicit=*/false);
+        softenIfAccessNote(D, attr,
+          diagnose(firstNameLoc, diag::objc_name_req_nullary,
+                   D->getDescriptiveKind())
+            .fixItRemoveChars(afterFirstNameLoc, attr->getRParenLoc())
+            .limitBehavior(behavior));
+
+        correctNameUsingNewAttr(
+            ObjCAttr::createNullary(Ctx, attr->AtLoc, attr->getLocation(),
+                                    attr->getLParenLoc(), firstNameLoc,
+                                    objcName->getSelectorPieces()[0],
+                                    attr->getRParenLoc()));
       }
     } else if (isa<SubscriptDecl>(D) || isa<DestructorDecl>(D)) {
       SourceLoc diagLoc = attr->getLParenLoc();
       if (diagLoc.isInvalid())
         diagLoc = D->getLoc();
-      diagnose(diagLoc,
-               isa<SubscriptDecl>(D)
-                 ? diag::objc_name_subscript
-                 : diag::objc_name_deinit)
-          .limitBehavior(behavior);
-      const_cast<ObjCAttr *>(attr)->clearName();
+      softenIfAccessNote(D, attr,
+        diagnose(diagLoc,
+                 isa<SubscriptDecl>(D)
+                   ? diag::objc_name_subscript
+                   : diag::objc_name_deinit)
+            .limitBehavior(behavior));
+
+      correctNameUsingNewAttr(
+          ObjCAttr::createUnnamed(Ctx, attr->AtLoc, attr->getLocation()));
     } else {
       auto func = cast<AbstractFunctionDecl>(D);
 
@@ -1090,28 +1082,30 @@ void AttributeChecker::visitObjCAttr(ObjCAttr *attr) {
         SourceLoc firstNameLoc = func->getLoc();
         if (!attr->getNameLocs().empty())
           firstNameLoc = attr->getNameLocs().front();
-        diagnose(firstNameLoc,
-                 diag::objc_name_func_mismatch,
-                 isa<FuncDecl>(func),
-                 numArgumentNames,
-                 numArgumentNames != 1,
-                 numParameters,
-                 numParameters != 1,
-                 func->hasThrows())
-            .limitBehavior(behavior);
-        D->getAttrs().add(
-          ObjCAttr::createUnnamed(Ctx, attr->AtLoc,  attr->Range.Start));
-        D->getAttrs().removeAttribute(attr);
+        softenIfAccessNote(D, attr,
+          diagnose(firstNameLoc,
+                   diag::objc_name_func_mismatch,
+                   isa<FuncDecl>(func),
+                   numArgumentNames,
+                   numArgumentNames != 1,
+                   numParameters,
+                   numParameters != 1,
+                   func->hasThrows())
+              .limitBehavior(behavior));
+        
+        correctNameUsingNewAttr(
+            ObjCAttr::createUnnamed(Ctx, attr->AtLoc, attr->Range.Start));
       }
     }
   } else if (isa<EnumElementDecl>(D)) {
     // Enum elements require names.
     diagnoseAndRemoveAttr(attr, diag::objc_enum_case_req_name)
         .limitBehavior(behavior);
+    reason.describe(D);
   }
 
   // Diagnose an @objc attribute used without importing Foundation.
-  diagnoseObjCAttrWithoutFoundation(attr, D, behavior);
+  diagnoseObjCAttrWithoutFoundation(attr, D, reason, behavior);
 }
 
 void AttributeChecker::visitNonObjCAttr(NonObjCAttr *attr) {
@@ -1206,20 +1200,13 @@ void TypeChecker::checkDeclAttributes(Decl *D) {
     default: break;
     }
 
-    DiagnosticBehavior behavior = attr->getAddedByAccessNote()
-                                ? DiagnosticBehavior::Remark
-                                : DiagnosticBehavior::Unspecified;
-
     if (!OnlyKind.empty())
       Checker.diagnoseAndRemoveAttr(attr, diag::attr_only_one_decl_kind,
-                                    attr, OnlyKind)
-          .limitBehavior(behavior);
+                                    attr, OnlyKind);
     else if (attr->isDeclModifier())
-      Checker.diagnoseAndRemoveAttr(attr, diag::invalid_decl_modifier, attr)
-          .limitBehavior(behavior);
+      Checker.diagnoseAndRemoveAttr(attr, diag::invalid_decl_modifier, attr);
     else
-      Checker.diagnoseAndRemoveAttr(attr, diag::invalid_decl_attribute, attr)
-          .limitBehavior(behavior);
+      Checker.diagnoseAndRemoveAttr(attr, diag::invalid_decl_attribute, attr);
   }
   Checker.checkOriginalDefinedInAttrs(D, ODIAttrs);
 }
@@ -4186,8 +4173,6 @@ resolveDifferentiableAttrOriginalFunction(DifferentiableAttr *attr) {
   auto *D = attr->getOriginalDeclaration();
   assert(D &&
          "Original declaration should be resolved by parsing/deserialization");
-  auto &ctx = D->getASTContext();
-  auto &diags = ctx.Diags;
   auto *original = dyn_cast<AbstractFunctionDecl>(D);
   if (auto *asd = dyn_cast<AbstractStorageDecl>(D)) {
     // If `@differentiable` attribute is declared directly on a
@@ -4211,7 +4196,7 @@ resolveDifferentiableAttrOriginalFunction(DifferentiableAttr *attr) {
       original = nullptr;
   // Diagnose if original `AbstractFunctionDecl` could not be resolved.
   if (!original) {
-    diagnoseAndRemoveAttr(diags, D, attr, diag::invalid_decl_attribute, attr);
+    diagnoseAndRemoveAttr(D, attr, diag::invalid_decl_attribute, attr);
     attr->setInvalid();
     return nullptr;
   }
@@ -4541,8 +4526,7 @@ IndexSubset *DifferentiableAttributeTypeCheckRequest::evaluate(
         {getterDecl, resolvedDiffParamIndices}, newAttr);
     // Reject duplicate `@differentiable` attributes.
     if (!insertion.second) {
-      diagnoseAndRemoveAttr(diags, D, attr,
-                            diag::differentiable_attr_duplicate);
+      diagnoseAndRemoveAttr(D, attr, diag::differentiable_attr_duplicate);
       diags.diagnose(insertion.first->getSecond()->getLocation(),
                      diag::differentiable_attr_duplicate_note);
       return nullptr;
@@ -4558,7 +4542,7 @@ IndexSubset *DifferentiableAttributeTypeCheckRequest::evaluate(
   auto insertion =
       ctx.DifferentiableAttrs.try_emplace({D, resolvedDiffParamIndices}, attr);
   if (!insertion.second && insertion.first->getSecond() != attr) {
-    diagnoseAndRemoveAttr(diags, D, attr, diag::differentiable_attr_duplicate);
+    diagnoseAndRemoveAttr(D, attr, diag::differentiable_attr_duplicate);
     diags.diagnose(insertion.first->getSecond()->getLocation(),
                    diag::differentiable_attr_duplicate_note);
     return nullptr;
@@ -5398,6 +5382,48 @@ void AttributeChecker::visitActorAttr(ActorAttr *attr) {
   (void)classDecl->isActor();
 }
 
+void AttributeChecker::visitActorIndependentAttr(ActorIndependentAttr *attr) {
+  // @actorIndependent can be applied to global and static/class variables
+  // that do not have storage.
+  auto dc = D->getDeclContext();
+  if (auto var = dyn_cast<VarDecl>(D)) {
+    // @actorIndependent is meaningless on a `let`.
+    if (var->isLet()) {
+      diagnoseAndRemoveAttr(attr, diag::actorindependent_let);
+      return;
+    }
+
+    // @actorIndependent can not be applied to stored properties, unless if
+    // the 'unsafe' option was specified
+    if (var->hasStorage()) {
+      switch (attr->getKind()) {
+        case ActorIndependentKind::Safe:
+          diagnoseAndRemoveAttr(attr, diag::actorindependent_mutable_storage);
+          return;
+
+        case ActorIndependentKind::Unsafe:
+          break;
+      }
+    }
+
+    // @actorIndependent can not be applied to local properties.
+    if (dc->isLocalContext()) {
+      diagnoseAndRemoveAttr(attr, diag::actorindependent_local_var);
+      return;
+    }
+
+    // If this is a static or global variable, we're all set.
+    if (dc->isModuleScopeContext() ||
+        (dc->isTypeContext() && var->isStatic())) {
+      return;
+    }
+  }
+
+  if (auto VD = dyn_cast<ValueDecl>(D)) {
+    (void)getActorIsolation(VD);
+  }
+}
+
 void AttributeChecker::visitNonisolatedAttr(NonisolatedAttr *attr) {
   // 'nonisolated' can be applied to global and static/class variables
   // that do not have storage.
@@ -5415,7 +5441,7 @@ void AttributeChecker::visitNonisolatedAttr(NonisolatedAttr *attr) {
       return;
     }
 
-    // nonisolated can not be applied to local properties.
+    // @actorIndependent can not be applied to local properties.
     if (dc->isLocalContext()) {
       diagnoseAndRemoveAttr(attr, diag::nonisolated_local_var);
       return;
@@ -5565,6 +5591,10 @@ public:
   }
 
   void visitSendableAttr(SendableAttr *attr) {
+    // Nothing else to check.
+  }
+
+  void visitActorIndependentAttr(ActorIndependentAttr *attr) {
     // Nothing else to check.
   }
 
