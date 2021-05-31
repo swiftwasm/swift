@@ -84,6 +84,15 @@ if(("${SWIFT_HOST_VARIANT_SDK}" STREQUAL "${SWIFT_PRIMARY_VARIANT_SDK}") AND
     endif()
   endif()
 
+  if(SWIFT_ENABLE_EXPERIMENTAL_DISTRIBUTED)
+#    list(APPEND PLATFORM_SOURCES
+#      DistributedActor.cpp
+#      )
+    list(APPEND PLATFORM_TARGET_LINK_LIBRARIES
+      swift_Distributed${SWIFT_PRIMARY_VARIANT_SUFFIX}
+      )
+  endif()
+
   # Don't complain about these files not being in the sources list.
   set(LLVM_OPTIONAL_SOURCES
     weak.mm
@@ -129,4 +138,12 @@ if(("${SWIFT_HOST_VARIANT_SDK}" STREQUAL "${SWIFT_PRIMARY_VARIANT_SDK}") AND
     swiftCore${SWIFT_PRIMARY_VARIANT_SUFFIX}
     ${PLATFORM_TARGET_LINK_LIBRARIES}
     )
+
+  # Check that the tests are using the async calling convention
+  # correctly, and that musttail isn't missed by Clang/LLVM.
+  if(NOT SWIFT_COMPILER_IS_MSVC_LIKE)
+    target_compile_options(SwiftRuntimeTests
+      PUBLIC "-mllvm;-enable-swifttailcc-musttail-check")
+  endif()
+
 endif()

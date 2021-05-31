@@ -419,8 +419,16 @@ option(SWIFT_ENABLE_EXPERIMENTAL_DIFFERENTIABLE_PROGRAMMING
   "Enable experimental Swift differentiable programming features"
   FALSE)
 
+option(SWIFT_IMPLICIT_CONCURRENCY_IMPORT
+  "Implicitly import the Swift concurrency module"
+  TRUE)
+
 option(SWIFT_ENABLE_EXPERIMENTAL_CONCURRENCY
-  "Enable experimental Swift concurrency model"
+  "Enable build of the Swift concurrency module"
+  FALSE)
+
+option(SWIFT_ENABLE_EXPERIMENTAL_DISTRIBUTED
+  "Enable experimental distributed actors and functions"
   FALSE)
 
 option(SWIFT_ENABLE_DISPATCH
@@ -906,6 +914,7 @@ if(SWIFT_BUILD_STDLIB OR SWIFT_BUILD_SDK_OVERLAY)
 
   message(STATUS "Differentiable Programming Support: ${SWIFT_ENABLE_EXPERIMENTAL_DIFFERENTIABLE_PROGRAMMING}")
   message(STATUS "Concurrency Support: ${SWIFT_ENABLE_EXPERIMENTAL_CONCURRENCY}")
+  message(STATUS "Distributed Support: ${SWIFT_ENABLE_EXPERIMENTAL_DISTRIBUTED}")
   message(STATUS "")
 else()
   message(STATUS "Not building Swift standard library, SDK overlays, and runtime")

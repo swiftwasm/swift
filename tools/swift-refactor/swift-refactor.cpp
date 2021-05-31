@@ -99,6 +99,10 @@ InputFilenames(llvm::cl::Positional, llvm::cl::desc("[input files...]"),
                llvm::cl::ZeroOrMore);
 
 static llvm::cl::opt<std::string>
+    RewrittenOutputFile("rewritten-output-file",
+                        llvm::cl::desc("Name of the rewritten output file"));
+
+static llvm::cl::opt<std::string>
 LineColumnPair("pos", llvm::cl::desc("Line:Column pair or /*label*/"));
 
 static llvm::cl::opt<std::string>
@@ -123,6 +127,13 @@ IsNonProtocolType("is-non-protocol-type",
 static llvm::cl::opt<bool> EnableExperimentalConcurrency(
     "enable-experimental-concurrency",
     llvm::cl::desc("Whether to enable experimental concurrency or not"));
+
+static llvm::cl::opt<std::string>
+    SDK("sdk", llvm::cl::desc("Path to the SDK to build against"));
+
+static llvm::cl::list<std::string>
+    ImportPaths("I",
+                llvm::cl::desc("Add a directory to the import search path"));
 
 enum class DumpType {
   REWRITTEN,
@@ -274,6 +285,10 @@ int main(int argc, char *argv[]) {
   Invocation.setMainExecutablePath(
     llvm::sys::fs::getMainExecutable(argv[0],
     reinterpret_cast<void *>(&anchorForGetMainExecutable)));
+
+  Invocation.setSDKPath(options::SDK);
+  Invocation.setImportSearchPaths(options::ImportPaths);
+
   Invocation.getFrontendOptions().InputsAndOutputs.addInputFile(
       options::SourceFilename);
   Invocation.getLangOptions().AttachCommentsToDecls = true;
@@ -402,14 +417,27 @@ int main(int argc, char *argv[]) {
   switch (options::DumpIn) {
   case options::DumpType::REWRITTEN:
     pConsumer.reset(new SourceEditOutputConsumer(SF->getASTContext().SourceMgr,
-                                                 BufferID,
-                                                 llvm::outs()));
+                                                 BufferID, llvm::outs()));
     break;
   case options::DumpType::JSON:
     pConsumer.reset(new SourceEditJsonConsumer(llvm::outs()));
     break;
   case options::DumpType::TEXT:
-    pConsumer.reset(new SourceEditTextConsumer(llvm::outs()));
+    if (options::RewrittenOutputFile.empty()) {
+      pConsumer.reset(new SourceEditTextConsumer(llvm::outs()));
+    } else {
+      std::error_code EC;
+      static llvm::raw_fd_ostream FileStream(options::RewrittenOutputFile, EC,
+                                             llvm::sys::fs::OF_None);
+      if (FileStream.has_error() || EC) {
+        llvm::errs() << "Could not open rewritten output file";
+        return 1;
+      }
+      pConsumer.reset(new DuplicatingSourceEditConsumer(
+          new SourceEditTextConsumer(llvm::outs()),
+          new SourceEditOutputConsumer(SF->getASTContext().SourceMgr, BufferID,
+                                       FileStream)));
+    }
     break;
   }
 
