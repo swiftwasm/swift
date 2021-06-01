@@ -87,8 +87,7 @@ if(NOT SWIFT_COMPILER_IS_MSVC_LIKE)
         "-mllvm" "-enable-swifttailcc-musttail-check")
 endif()
 
-set(sdk "${SWIFT_HOST_VARIANT_SDK}")
-if(SWIFT_BUILD_STATIC_STDLIB AND "${sdk}" STREQUAL "LINUX")
+macro(add_image_inspection_shared sdk primary_arch inspection_file linkfile_src)
   set(static_binary_lnk_file_list)
   string(TOLOWER "${sdk}" lowercase_sdk)
 
