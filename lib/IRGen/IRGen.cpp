@@ -36,7 +36,6 @@
 #include "swift/IRGen/IRGenSILPasses.h"
 #include "swift/LLVMPasses/Passes.h"
 #include "swift/LLVMPasses/PassesFwd.h"
-#include "swift/Serialization/SerializedModuleLoader.h"
 #include "swift/SIL/SILModule.h"
 #include "swift/SIL/SILRemarkStreamer.h"
 #include "swift/SILOptimizer/PassManager/PassManager.h"
