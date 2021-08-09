@@ -2731,7 +2731,7 @@ static SILFunction *getOrCreateKeyPathGetter(SILGenModule &SGM,
     auto param = GenericTypeParamType::get(0, 0, SGM.getASTContext());
     auto sig = GenericSignature::get(param, { });
     genericSig = CanGenericSignature(sig);
-    genericEnv = sig->getGenericEnvironment();
+    genericEnv = GenericEnvironment::getIncomplete(genericSig);
   }
 
   // Build the signature of the thunk as expected by the keypath runtime.
@@ -2882,7 +2882,7 @@ static SILFunction *getOrCreateKeyPathSetter(SILGenModule &SGM,
     auto param = GenericTypeParamType::get(0, 0, SGM.getASTContext());
     auto sig = GenericSignature::get(param, { });
     genericSig = CanGenericSignature(sig);
-    genericEnv = sig->getGenericEnvironment();
+    genericEnv = GenericEnvironment::getIncomplete(genericSig);
   }
 
   // Build the signature of the thunk as expected by the keypath runtime.
@@ -3064,7 +3064,7 @@ getOrCreateKeyPathEqualsAndHash(SILGenModule &SGM,
     auto param = GenericTypeParamType::get(0, 0, SGM.getASTContext());
     auto sig = GenericSignature::get(param, { });
     genericSig = CanGenericSignature(sig);
-    genericEnv = sig->getGenericEnvironment();
+    genericEnv = GenericEnvironment::getIncomplete(genericSig);
   }
 
   auto &C = SGM.getASTContext();
