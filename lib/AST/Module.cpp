@@ -970,8 +970,14 @@ ModuleDecl::lookupExistentialConformance(Type type, ProtocolDecl *protocol) {
   return ProtocolConformanceRef::forInvalid();
 }
 
+/// Whether we should create missing conformances to the given protocol.
+static bool shouldCreateMissingConformances(ProtocolDecl *proto) {
+  return proto->isSpecificProtocol(KnownProtocolKind::Sendable);
+}
+
 ProtocolConformanceRef ModuleDecl::lookupConformance(Type type,
-                                                     ProtocolDecl *protocol) {
+                                                     ProtocolDecl *protocol,
+                                                     bool allowMissing) {
   // If we are recursively checking for implicit conformance of a nominal
   // type to Sendable, fail without evaluating this request. This
   // squashes cycles.
@@ -985,8 +991,159 @@ ProtocolConformanceRef ModuleDecl::lookupConformance(Type type,
     }
   }
 
-  return evaluateOrDefault(
+  auto result = evaluateOrDefault(
       getASTContext().evaluator, request, ProtocolConformanceRef::forInvalid());
+
+  // If we aren't supposed to allow missing conformances through for this
+  // protocol, replace the result with an "invalid" result.
+  if (!allowMissing &&
+      shouldCreateMissingConformances(protocol) &&
+      result.hasMissingConformance(this))
+    return ProtocolConformanceRef::forInvalid();
+
+  return result;
+}
+
+/// Retrieve an invalid or missing conformance, as appropriate, when a
+/// legitimate conformance doesn't exist.
+static ProtocolConformanceRef getInvalidOrMissingConformance(
+    Type type, ProtocolDecl *proto) {
+  // Introduce "missing" conformances when appropriate, so that type checking
+  // (and even code generation) can continue.
+  ASTContext &ctx = proto->getASTContext();
+  if (shouldCreateMissingConformances(proto)) {
+    return ProtocolConformanceRef(
+        ctx.getBuiltinConformance(
+          type, proto, GenericSignature(), { },
+          BuiltinConformanceKind::Missing));
+  }
+
+  return ProtocolConformanceRef::forInvalid();
+}
+
+/// Synthesize a builtin tuple type conformance to the given protocol, if
+/// appropriate.
+static ProtocolConformanceRef getBuiltinTupleTypeConformance(
+    Type type, const TupleType *tupleType, ProtocolDecl *protocol,
+    ModuleDecl *module) {
+  // Tuple type are Sendable when all of their element types are Sendable.
+  if (protocol->isSpecificProtocol(KnownProtocolKind::Sendable)) {
+    ASTContext &ctx = protocol->getASTContext();
+
+    // Create the pieces for a generic tuple type (T1, T2, ... TN) and a
+    // generic signature <T1, T2, ..., TN>.
+    SmallVector<GenericTypeParamType *, 4> genericParams;
+    SmallVector<Type, 4> typeSubstitutions;
+    SmallVector<TupleTypeElt, 4> genericElements;
+    SmallVector<Requirement, 4> conditionalRequirements;
+    for (const auto &elt : tupleType->getElements()) {
+      auto genericParam = GenericTypeParamType::get(0, genericParams.size(), ctx);
+      genericParams.push_back(genericParam);
+      typeSubstitutions.push_back(elt.getRawType());
+      genericElements.push_back(elt.getWithType(genericParam));
+      conditionalRequirements.push_back(
+          Requirement(RequirementKind::Conformance, genericParam,
+                      protocol->getDeclaredType()));
+    }
+
+    // If there were no generic parameters, just form the builtin conformance.
+    if (genericParams.empty()) {
+      return ProtocolConformanceRef(
+          ctx.getBuiltinConformance(type, protocol, GenericSignature(), { },
+                                    BuiltinConformanceKind::Synthesized));
+    }
+
+    // Form a generic conformance of (T1, T2, ..., TN): Sendable with signature
+    // <T1, T2, ..., TN> and conditional requirements T1: Sendable,
+    // T2: Sendable, ..., TN: Sendable.
+    auto genericTupleType = TupleType::get(genericElements, ctx);
+    auto genericSig = GenericSignature::get(
+        genericParams, conditionalRequirements);
+    auto genericConformance = ctx.getBuiltinConformance(
+        genericTupleType, protocol, genericSig, conditionalRequirements,
+        BuiltinConformanceKind::Synthesized);
+
+    // Compute the substitution map from the generic parameters of the
+    // generic conformance to actual types that were in the tuple type.
+    // Form a specialized conformance from that.
+    auto subMap = SubstitutionMap::get(
+        genericSig, [&](SubstitutableType *type) {
+          if (auto gp = dyn_cast<GenericTypeParamType>(type)) {
+            if (gp->getDepth() == 0)
+              return typeSubstitutions[gp->getIndex()];
+          }
+
+          return Type(type);
+        },
+        LookUpConformanceInModule(module));
+    return ProtocolConformanceRef(
+        ctx.getSpecializedConformance(type, genericConformance, subMap));
+  }
+
+  return getInvalidOrMissingConformance(type, protocol);
+}
+
+/// Whether the given function type conforms to Sendable.
+static bool isSendableFunctionType(const FunctionType *functionType) {
+  if (functionType->isSendable())
+    return true;
+
+  // C and thin function types have no captures, so they are Sendable.
+  switch (functionType->getExtInfo().getRepresentation()) {
+  case FunctionTypeRepresentation::Block:
+  case FunctionTypeRepresentation::Swift:
+    return false;
+
+  case FunctionTypeRepresentation::CFunctionPointer:
+  case FunctionTypeRepresentation::Thin:
+    return true;
+  }
+}
+
+/// Synthesize a builtin function type conformance to the given protocol, if
+/// appropriate.
+static ProtocolConformanceRef getBuiltinFunctionTypeConformance(
+    Type type, const FunctionType *functionType, ProtocolDecl *protocol) {
+  // @Sendable function types are Sendable.
+  if (protocol->isSpecificProtocol(KnownProtocolKind::Sendable) &&
+      isSendableFunctionType(functionType)) {
+    ASTContext &ctx = protocol->getASTContext();
+    return ProtocolConformanceRef(
+        ctx.getBuiltinConformance(type, protocol, GenericSignature(), { },
+                                  BuiltinConformanceKind::Synthesized));
+  }
+
+  return getInvalidOrMissingConformance(type, protocol);
+}
+
+/// Synthesize a builtin metatype type conformance to the given protocol, if
+/// appropriate.
+static ProtocolConformanceRef getBuiltinMetaTypeTypeConformance(
+    Type type, const AnyMetatypeType *metatypeType, ProtocolDecl *protocol) {
+  // All metatypes are Sendable.
+  if (protocol->isSpecificProtocol(KnownProtocolKind::Sendable)) {
+    ASTContext &ctx = protocol->getASTContext();
+    return ProtocolConformanceRef(
+        ctx.getBuiltinConformance(type, protocol, GenericSignature(), { },
+                                  BuiltinConformanceKind::Synthesized));
+  }
+
+  return getInvalidOrMissingConformance(type, protocol);
+}
+
+/// Synthesize a builtin type conformance to the given protocol, if
+/// appropriate.
+static ProtocolConformanceRef getBuiltinBuiltinTypeConformance(
+    Type type, const BuiltinType *builtinType, ProtocolDecl *protocol) {
+  // All builtin are Sendable.
+  if (protocol->isSpecificProtocol(KnownProtocolKind::Sendable)) {
+    ASTContext &ctx = protocol->getASTContext();
+    return ProtocolConformanceRef(
+        ctx.getBuiltinConformance(type, protocol, GenericSignature(), { },
+                                  BuiltinConformanceKind::Synthesized));
+  }
+
+  return getInvalidOrMissingConformance(type, protocol);
 }
 
 ProtocolConformanceRef
@@ -1024,14 +1181,18 @@ LookupConformanceInModuleRequest::evaluate(
         return ProtocolConformanceRef(protocol);
     }
 
-    return ProtocolConformanceRef::forInvalid();
+    return getInvalidOrMissingConformance(type, protocol);
   }
 
   // An existential conforms to a protocol if the protocol is listed in the
   // existential's list of conformances and the existential conforms to
   // itself.
-  if (type->isExistentialType())
-    return mod->lookupExistentialConformance(type, protocol);
+  if (type->isExistentialType()) {
+    auto result = mod->lookupExistentialConformance(type, protocol);
+    if (result.isInvalid())
+      return getInvalidOrMissingConformance(type, protocol);
+    return result;
+  }
 
   // Type variables have trivial conformances.
   if (type->isTypeVariableOrMember())
@@ -1043,17 +1204,37 @@ LookupConformanceInModuleRequest::evaluate(
   if (type->is<UnresolvedType>() || type->is<PlaceholderType>())
     return ProtocolConformanceRef(protocol);
 
+  // Tuple types can conform to protocols.
+  if (auto tupleType = type->getAs<TupleType>()) {
+    return getBuiltinTupleTypeConformance(type, tupleType, protocol, mod);
+  }
+
+  // Function types can conform to protocols.
+  if (auto functionType = type->getAs<FunctionType>()) {
+    return getBuiltinFunctionTypeConformance(type, functionType, protocol);
+  }
+
+  // Metatypes can conform to protocols.
+  if (auto metatypeType = type->getAs<AnyMetatypeType>()) {
+    return getBuiltinMetaTypeTypeConformance(type, metatypeType, protocol);
+  }
+
+  // Builtin types can conform to protocols.
+  if (auto builtinType = type->getAs<BuiltinType>()) {
+    return getBuiltinBuiltinTypeConformance(type, builtinType, protocol);
+  }
+
   auto nominal = type->getAnyNominal();
 
   // If we don't have a nominal type, there are no conformances.
   if (!nominal || isa<ProtocolDecl>(nominal))
-    return ProtocolConformanceRef::forInvalid();
+    return getInvalidOrMissingConformance(type, protocol);
 
   // Find the (unspecialized) conformance.
   SmallVector<ProtocolConformance *, 2> conformances;
   if (!nominal->lookupConformance(mod, protocol, conformances)) {
     if (!protocol->isSpecificProtocol(KnownProtocolKind::Sendable))
-      return ProtocolConformanceRef::forInvalid();
+      return getInvalidOrMissingConformance(type, protocol);
 
     // Try to infer Sendable conformance.
     GetImplicitSendableRequest cvRequest{nominal};
@@ -1062,11 +1243,31 @@ LookupConformanceInModuleRequest::evaluate(
       conformances.clear();
       conformances.push_back(conformance);
     } else {
-      return ProtocolConformanceRef::forInvalid();
+      return getInvalidOrMissingConformance(type, protocol);
     }
   }
 
-  // FIXME: Ambiguity resolution.
+  assert(!conformances.empty());
+
+  // If we have multiple conformances, first try to filter out any that are
+  // unavailable on the current deployment target.
+  //
+  // FIXME: Conformance lookup should really depend on source location for
+  // this to be 100% correct.
+  if (conformances.size() > 1) {
+    SmallVector<ProtocolConformance *, 2> availableConformances;
+
+    for (auto *conformance : conformances) {
+      if (conformance->getDeclContext()->isAlwaysAvailableConformanceContext())
+        availableConformances.push_back(conformance);
+    }
+
+    // Don't filter anything out if all conformances are unavailable.
+    if (!availableConformances.empty())
+      std::swap(availableConformances, conformances);
+  }
+
+  // If we still have multiple conformances, just pick the first one.
   auto conformance = conformances.front();
 
   // Rebuild inherited conformances based on the root normal conformance.
@@ -1407,6 +1608,12 @@ bool ModuleDecl::isStdlibModule() const {
   return !getParent() && getName() == getASTContext().StdlibModuleName;
 }
 
+bool ModuleDecl::hasStandardSubstitutions() const {
+  return !getParent() &&
+      (getName() == getASTContext().StdlibModuleName ||
+       getName() == getASTContext().Id_Concurrency);
+}
+
 bool ModuleDecl::isSwiftShimsModule() const {
   return !getParent() && getName() == getASTContext().SwiftShimsModuleName;
 }
@@ -1423,7 +1630,7 @@ bool ModuleDecl::isBuiltinModule() const {
   return this == getASTContext().TheBuiltinModule;
 }
 
-bool SourceFile::registerMainDecl(Decl *mainDecl, SourceLoc diagLoc) {
+bool SourceFile::registerMainDecl(ValueDecl *mainDecl, SourceLoc diagLoc) {
   assert(mainDecl);
   if (mainDecl == MainDecl)
     return false;
@@ -1610,6 +1817,32 @@ Fingerprint ModuleDecl::getFingerprint() const {
   }
 
   return Fingerprint{std::move(hasher)};
+}
+
+bool ModuleDecl::isExternallyConsumed() const {
+  // Modules for executables aren't expected to be consumed by other modules.
+  // This picks up all kinds of entrypoints, including script mode,
+  // @UIApplicationMain and @NSApplicationMain.
+  if (hasEntryPoint()) {
+    return false;
+  }
+
+  // If an implicit Objective-C header was needed to construct this module, it
+  // must be the product of a library target.
+  if (!getImplicitImportInfo().BridgingHeaderPath.empty()) {
+    return false;
+  }
+
+  // App extensions are special beasts because they build without entrypoints
+  // like library targets, but they behave like executable targets because
+  // their associated modules are not suitable for distribution.
+  if (getASTContext().LangOpts.EnableAppExtensionRestrictions) {
+    return false;
+  }
+
+  // FIXME: This is still a lousy approximation of whether the module file will
+  // be externally consumed.
+  return true;
 }
 
 //===----------------------------------------------------------------------===//
@@ -1912,8 +2145,8 @@ OverlayFileContents::load(std::unique_ptr<llvm::MemoryBuffer> input,
     return error;
 
   if (contents.version > 1) {
-    auto message = Twine("key 'version' has invalid value: ") + Twine(contents.version);
-    errorMessages.push_back(message.str());
+    std::string message = (Twine("key 'version' has invalid value: ") + Twine(contents.version)).str();
+    errorMessages.emplace_back(std::move(message));
     return make_error_code(std::errc::result_out_of_range);
   }
 

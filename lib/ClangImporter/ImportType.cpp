@@ -23,8 +23,8 @@
 #include "swift/AST/DiagnosticEngine.h"
 #include "swift/AST/DiagnosticsClangImporter.h"
 #include "swift/AST/ExistentialLayout.h"
-#include "swift/AST/GenericEnvironment.h"
-#include "swift/AST/GenericSignatureBuilder.h"
+#include "swift/AST/GenericParamList.h"
+#include "swift/AST/GenericSignature.h"
 #include "swift/AST/Module.h"
 #include "swift/AST/NameLookup.h"
 #include "swift/AST/ParameterList.h"
@@ -708,11 +708,11 @@ namespace {
         // suppressed. Treat it as a typedef.
         return None;
       }
-      if (index > genericSig->getGenericParams().size()) {
+      if (index > genericSig.getGenericParams().size()) {
         return ImportResult();
       }
 
-      return ImportResult(genericSig->getGenericParams()[index],
+      return ImportResult(genericSig.getGenericParams()[index],
                           ImportHint::ObjCPointer);
     }
 
@@ -1110,7 +1110,7 @@ namespace {
             auto unboundDecl = unboundType->getDecl();
             auto bridgedSig = unboundDecl->getGenericSignature();
             assert(bridgedSig && "Bridged signature");
-            unsigned numExpectedTypeArgs = bridgedSig->getGenericParams().size();
+            unsigned numExpectedTypeArgs = bridgedSig.getGenericParams().size();
             if (importedTypeArgs.size() != numExpectedTypeArgs)
               return Type();
 
@@ -1880,9 +1880,12 @@ ParameterList *ClangImporter::Implementation::importFunctionParameterList(
 
       param->setInterfaceType(parentType.getType());
 
-      // Workaround until proper const support is handled: Force everything to
-      // be mutating. This implicitly makes the parameter indirect.
-      param->setSpecifier(ParamSpecifier::InOut);
+      if (SwiftContext.getClangModuleLoader()->isCXXMethodMutating(CMD)) {
+        // This implicitly makes the parameter indirect.
+        param->setSpecifier(ParamSpecifier::InOut);
+      } else {
+        param->setSpecifier(ParamSpecifier::Default);
+      }
 
       parameters.push_back(param);
     }

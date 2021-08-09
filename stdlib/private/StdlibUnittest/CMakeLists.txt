@@ -11,8 +11,13 @@ if (NOT IS_BUILD_TYPE_OPTIMIZED)
 endif()
 
 set(swift_stdlib_unittest_link_libraries "")
+set(swift_stdlib_unittest_modules "")
 if (SWIFT_ENABLE_EXPERIMENTAL_CONCURRENCY)
   list(APPEND swift_stdlib_unittest_link_libraries "swift_Concurrency")
+  list(APPEND swift_stdlib_unittest_modules "_Concurrency")
+endif()
+if (SWIFT_ENABLE_EXPERIMENTAL_DISTRIBUTED)
+  list(APPEND swift_stdlib_unittest_link_libraries "swift_Distributed")
 endif()
 
 add_swift_target_library(swiftStdlibUnittest ${SWIFT_STDLIB_LIBRARY_BUILD_TYPES} IS_STDLIB
@@ -36,7 +41,7 @@ add_swift_target_library(swiftStdlibUnittest ${SWIFT_STDLIB_LIBRARY_BUILD_TYPES}
   TestHelpers.swift
   TypeIndexed.swift
 
-  SWIFT_MODULE_DEPENDS SwiftPrivate SwiftPrivateLibcExtras
+  SWIFT_MODULE_DEPENDS SwiftPrivate SwiftPrivateLibcExtras ${swift_stdlib_unittest_modules}
   SWIFT_MODULE_DEPENDS_IOS Darwin Foundation SwiftPrivateThreadExtras
   SWIFT_MODULE_DEPENDS_OSX Darwin Foundation SwiftPrivateThreadExtras
   SWIFT_MODULE_DEPENDS_TVOS Darwin Foundation SwiftPrivateThreadExtras
@@ -50,6 +55,8 @@ add_swift_target_library(swiftStdlibUnittest ${SWIFT_STDLIB_LIBRARY_BUILD_TYPES}
   SWIFT_MODULE_DEPENDS_WASI WASILibc
   SWIFT_MODULE_DEPENDS_WINDOWS CRT WinSDK SwiftPrivateThreadExtras
   SWIFT_COMPILE_FLAGS ${swift_stdlib_unittest_compile_flags} ${SWIFT_STANDARD_LIBRARY_SWIFT_FLAGS}
+    -Xfrontend -define-availability
+    -Xfrontend \"SwiftStdlib 5.5:macOS 12.0, iOS 15.0, watchOS 8.0, tvOS 15.0\"
   INSTALL_IN_COMPONENT stdlib-experimental
   DARWIN_INSTALL_NAME_DIR "${SWIFT_DARWIN_STDLIB_PRIVATE_INSTALL_NAME_DIR}"
   LINK_LIBRARIES ${swift_stdlib_unittest_link_libraries})

@@ -142,6 +142,12 @@ func testOverloading(name: String) {
     }
   }
 
+  _ = overloadedTuplify(true) { cond in
+    if cond {
+      print(\"hello") // expected-error {{invalid component of Swift key path}}
+    }
+  }
+
   let _: A = a1
 
   _ = overloadedTuplify(true) { b in // expected-error {{ambiguous use of 'overloadedTuplify(_:body:)'}}
@@ -461,7 +467,7 @@ struct TestConstraintGenerationErrors {
   func buildTupleClosure() {
     tuplify(true) { _ in
       let a = nothing // expected-error {{cannot find 'nothing' in scope}}
-      String(nothing) // expected-error {{cannot find 'nothing' in scope}}
+      String(nothing)
     }
   }
 }
@@ -646,7 +652,7 @@ struct MyView {
 
   @TupleBuilder var invalidSwitchMultiple: some P {
     switch Optional.some(1) {
-    case .none: // expected-error {{'case' label in a 'switch' should have at least one executable statement}}
+    case .none: // expected-error {{'case' label in a 'switch' must have at least one executable statement}}
     case . // expected-error {{expected ':' after 'case'}}
     } // expected-error {{expected identifier after '.' expression}}
   }
@@ -719,6 +725,44 @@ struct TuplifiedStructWithInvalidClosure {
         self. // expected-error {{expected member name following '.'}}
       }
       42
+    }
+  }
+
+  @TupleBuilder var nestedErrorsDiagnosedByParser: some Any {
+    tuplify(true) { _ in
+      tuplify { _ in
+        self. // expected-error {{expected member name following '.'}}
+      }
+      42
+    }
+  }
+}
+
+// rdar://65667992 - invalid case in enum causes fallback diagnostic
+func test_rdar65667992() {
+  @resultBuilder
+  struct Builder {
+    static func buildBlock<T>(_ t: T) -> T { t }
+    static func buildEither<T>(first: T) -> T { first }
+    static func buildEither<T>(second: T) -> T { second }
+  }
+
+  struct S {}
+
+  enum E {
+    case set(v: Int, choices: [Int])
+    case notSet(choices: [Int])
+  }
+
+  struct MyView {
+    var entry: E
+
+    @Builder var body: S {
+      switch entry { // expected-error {{type 'E' has no member 'unset'}}
+      case .set(_, _): S()
+      case .unset(_): S()
+      default: S()
+      }
     }
   }
 }

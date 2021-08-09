@@ -117,14 +117,6 @@ std::string CompilerInvocation::getTBDPathForWholeModule() const {
 }
 
 std::string
-CompilerInvocation::getLdAddCFileOutputPathForWholeModule() const {
-  assert(getFrontendOptions().InputsAndOutputs.isWholeModule() &&
-         "LdAdd cfile only makes sense when the whole module can be seen");
-  return getPrimarySpecificPathsForAtMostOnePrimary()
-    .SupplementaryOutputs.LdAddCFilePath;
-}
-
-std::string
 CompilerInvocation::getModuleInterfaceOutputPathForWholeModule() const {
   assert(getFrontendOptions().InputsAndOutputs.isWholeModule() &&
          "ModuleInterfaceOutputPath only makes sense when the whole module "
@@ -156,7 +148,9 @@ SerializationOptions CompilerInvocation::computeSerializationOptions(
   serializationOpts.ModuleLinkName = opts.ModuleLinkName;
   serializationOpts.UserModuleVersion = opts.UserModuleVersion;
   serializationOpts.ExtraClangOptions = getClangImporterOptions().ExtraArgs;
-  
+  serializationOpts.PublicDependentLibraries =
+      getIRGenOptions().PublicLinkLibraries;
+
   if (opts.EmitSymbolGraph) {
     if (!opts.SymbolGraphOutputDir.empty()) {
       serializationOpts.SymbolGraphOutputDir = opts.SymbolGraphOutputDir;
@@ -168,6 +162,7 @@ SerializationOptions CompilerInvocation::computeSerializationOptions(
     serializationOpts.SymbolGraphOutputDir = OutputDir.str().str();
   }
   serializationOpts.SkipSymbolGraphInheritedDocs = opts.SkipInheritedDocs;
+  serializationOpts.IncludeSPISymbolsInSymbolGraph = opts.IncludeSPISymbolsInSymbolGraph;
   
   if (!getIRGenOptions().ForceLoadSymbolName.empty())
     serializationOpts.AutolinkForceLoad = true;
@@ -177,7 +172,7 @@ SerializationOptions CompilerInvocation::computeSerializationOptions(
   // the public.
   serializationOpts.SerializeOptionsForDebugging =
       opts.SerializeOptionsForDebugging.getValueOr(
-          !isModuleExternallyConsumed(module));
+          !module->isExternallyConsumed());
 
   serializationOpts.DisableCrossModuleIncrementalInfo =
       opts.DisableCrossModuleIncrementalBuild;
@@ -220,6 +215,7 @@ bool CompilerInstance::setUpASTContextIfNeeded() {
       Invocation.getLangOptions(), Invocation.getTypeCheckerOptions(),
       Invocation.getSearchPathOptions(),
       Invocation.getClangImporterOptions(),
+      Invocation.getSymbolGraphOptions(),
       SourceMgr, Diagnostics));
   registerParseRequestFunctions(Context->evaluator);
   registerTypeCheckerRequestFunctions(Context->evaluator);
@@ -448,6 +444,8 @@ void CompilerInstance::setUpDiagnosticOptions() {
   }
   Diagnostics.setDiagnosticDocumentationPath(
       Invocation.getDiagnosticOptions().DiagnosticDocumentationPath);
+  Diagnostics.setLanguageVersion(
+      Invocation.getLangOptions().EffectiveLanguageVersion);
   if (!Invocation.getDiagnosticOptions().LocalizationCode.empty()) {
     Diagnostics.setLocalization(
         Invocation.getDiagnosticOptions().LocalizationCode,
@@ -530,7 +528,8 @@ bool CompilerInstance::setUpModuleLoaders() {
   ModuleInterfaceLoaderOptions LoaderOpts(FEOpts);
   Context->addModuleInterfaceChecker(
       std::make_unique<ModuleInterfaceCheckerImpl>(
-          *Context, ModuleCachePath, FEOpts.PrebuiltModuleCachePath, LoaderOpts,
+          *Context, ModuleCachePath, FEOpts.PrebuiltModuleCachePath,
+          FEOpts.BackupModuleInterfaceDir, LoaderOpts,
           RequireOSSAModules_t(Invocation.getSILOptions())));
   // If implicit modules are disabled, we need to install an explicit module
   // loader.
@@ -539,7 +538,6 @@ bool CompilerInstance::setUpModuleLoaders() {
     auto ESML = ExplicitSwiftModuleLoader::create(
         *Context,
         getDependencyTracker(), MLM,
-        Invocation.getSearchPathOptions().ExplicitSwiftModules,
         Invocation.getSearchPathOptions().ExplicitSwiftModuleMap,
         IgnoreSourceInfoFile);
     this->DefaultSerializedLoader = ESML.get();
@@ -571,10 +569,11 @@ bool CompilerInstance::setUpModuleLoaders() {
     auto &FEOpts = Invocation.getFrontendOptions();
     ModuleInterfaceLoaderOptions LoaderOpts(FEOpts);
     InterfaceSubContextDelegateImpl ASTDelegate(
-        Context->SourceMgr, Context->Diags, Context->SearchPathOpts,
+        Context->SourceMgr, &Context->Diags, Context->SearchPathOpts,
         Context->LangOpts, Context->ClangImporterOpts, LoaderOpts,
         /*buildModuleCacheDirIfAbsent*/ false, ModuleCachePath,
         FEOpts.PrebuiltModuleCachePath,
+        FEOpts.BackupModuleInterfaceDir,
         FEOpts.SerializeModuleInterfaceDependencyHashes,
         FEOpts.shouldTrackSystemDependencies(),
         RequireOSSAModules_t(Invocation.getSILOptions()));
@@ -764,7 +763,7 @@ static bool shouldImportConcurrencyByDefault(const llvm::Triple &target) {
     return true;
   if (target.isOSLinux())
     return true;
-#if SWIFT_ENABLE_EXPERIMENTAL_CONCURRENCY
+#if SWIFT_IMPLICIT_CONCURRENCY_IMPORT
   if (target.isOSWASI())
     return true;
   if (target.isOSOpenBSD())
@@ -776,6 +775,12 @@ static bool shouldImportConcurrencyByDefault(const llvm::Triple &target) {
 bool CompilerInvocation::shouldImportSwiftConcurrency() const {
   return shouldImportConcurrencyByDefault(getLangOptions().Target) &&
       !getLangOptions().DisableImplicitConcurrencyModuleImport &&
+      getFrontendOptions().InputMode !=
+        FrontendOptions::ParseInputMode::SwiftModuleInterface;
+}
+
+bool CompilerInvocation::shouldImportSwiftDistributed() const {
+  return getLangOptions().EnableExperimentalDistributed &&
       getFrontendOptions().InputMode !=
         FrontendOptions::ParseInputMode::SwiftModuleInterface;
 }

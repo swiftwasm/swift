@@ -1015,7 +1015,8 @@ LLVM_ATTRIBUTE_USED void AccessPath::dump() const { print(llvm::dbgs()); }
 void AccessPathWithBase::print(raw_ostream &os) const {
   if (base)
     os << "Base: " << base;
-
+  else
+    os << "Base: unidentified\n";
   accessPath.print(os);
 }
 
@@ -1256,7 +1257,7 @@ int AccessPathDefUseTraversal::getPathOffset(const DFSEntry &dfs) const {
 bool AccessPathDefUseTraversal::checkAndUpdateOffset(DFSEntry &dfs) {
   int pathOffset = getPathOffset(dfs);
   if (dfs.offset == AccessPath::UnknownOffset) {
-    if (pathOffset > 0) {
+    if (pathOffset != 0) {
       // Pop the offset from the expected path; there should only be
       // one. Continue matching subobject indices even after seeing an unknown
       // offset. A subsequent mismatching subobject index is still considered
@@ -1767,7 +1768,9 @@ SILBasicBlock::iterator swift::removeBeginAccess(BeginAccessInst *beginAccess) {
       op->set(beginAccess->getSource());
     }
   }
-  return beginAccess->getParent()->erase(beginAccess);
+  auto nextIter = std::next(beginAccess->getIterator());
+  beginAccess->getParent()->erase(beginAccess);
+  return nextIter;
 }
 
 //===----------------------------------------------------------------------===//
@@ -1852,15 +1855,17 @@ static void visitBuiltinAddress(BuiltinInst *builtin,
     case BuiltinValueKind::IntInstrprofIncrement:
     case BuiltinValueKind::TSanInoutAccess:
     case BuiltinValueKind::CancelAsyncTask:
-    case BuiltinValueKind::CreateAsyncTaskFuture:
-    case BuiltinValueKind::CreateAsyncTaskGroupFuture:
+    case BuiltinValueKind::CreateAsyncTask:
+    case BuiltinValueKind::CreateAsyncTaskInGroup:
     case BuiltinValueKind::AutoDiffCreateLinearMapContext:
     case BuiltinValueKind::AutoDiffAllocateSubcontext:
     case BuiltinValueKind::InitializeDefaultActor:
     case BuiltinValueKind::DestroyDefaultActor:
     case BuiltinValueKind::GetCurrentExecutor:
     case BuiltinValueKind::StartAsyncLet:
+    case BuiltinValueKind::StartAsyncLetWithLocalBuffer:
     case BuiltinValueKind::EndAsyncLet:
+    case BuiltinValueKind::EndAsyncLetLifetime:
     case BuiltinValueKind::CreateTaskGroup:
     case BuiltinValueKind::DestroyTaskGroup:
       return;

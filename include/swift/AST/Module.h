@@ -578,10 +578,15 @@ public:
   ///
   /// \param protocol The protocol to which we are computing conformance.
   ///
+  /// \param allowMissing When \c true, the resulting conformance reference
+  /// might include "missing" conformances, which are synthesized for some
+  /// protocols as an error recovery mechanism.
+  ///
   /// \returns The result of the conformance search, which will be
   /// None if the type does not conform to the protocol or contain a
   /// ProtocolConformanceRef if it does conform.
-  ProtocolConformanceRef lookupConformance(Type type, ProtocolDecl *protocol);
+  ProtocolConformanceRef lookupConformance(Type type, ProtocolDecl *protocol,
+                                           bool allowMissing = false);
 
   /// Look for the conformance of the given existential type to the given
   /// protocol.
@@ -729,6 +734,9 @@ public:
   /// \returns true if this module is the "swift" standard library module.
   bool isStdlibModule() const;
 
+  /// \returns true if this module has standard substitutions for mangling.
+  bool hasStandardSubstitutions() const;
+
   /// \returns true if this module is the "SwiftShims" module;
   bool isSwiftShimsModule() const;
 
@@ -771,7 +779,6 @@ public:
   void collectBasicSourceFileInfo(
       llvm::function_ref<void(const BasicSourceFileInfo &)> callback) const;
 
-public:
   /// Retrieve a fingerprint value that summarizes the contents of this module.
   ///
   /// This interface hash a of a module is guaranteed to change if the interface
@@ -783,6 +790,15 @@ public:
   /// coarse-grained, way of determining when top-level changes to a module's
   /// contents have been made.
   Fingerprint getFingerprint() const;
+
+  /// Returns an approximation of whether the given module could be
+  /// redistributed and consumed by external clients.
+  ///
+  /// FIXME: The scope of this computation should be limited entirely to
+  /// RenamedDeclRequest. Unfortunately, it has been co-opted to support the
+  /// \c SerializeOptionsForDebugging hack. Once this information can be
+  /// transferred from module files to the dSYMs, remove this.
+  bool isExternallyConsumed() const;
 
   SourceRange getSourceRange() const { return SourceRange(); }
 

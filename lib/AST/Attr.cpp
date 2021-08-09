@@ -598,7 +598,7 @@ static void printDifferentiableAttrArguments(
   // generic signature. They should not be printed.
   ArrayRef<Requirement> derivativeRequirements;
   if (auto derivativeGenSig = attr->getDerivativeGenericSignature())
-    derivativeRequirements = derivativeGenSig->getRequirements();
+    derivativeRequirements = derivativeGenSig.getRequirements();
   auto requirementsToPrint =
     llvm::make_filter_range(derivativeRequirements, [&](Requirement req) {
         if (const auto &originalGenSig = original->getGenericSignature())
@@ -747,6 +747,10 @@ bool DeclAttribute::printImpl(ASTPrinter &Printer, const PrintOptions &Options,
     // implication. Thus we can skip them.
     if (auto *VD = dyn_cast<ValueDecl>(D)) {
       if (auto *BD = VD->getOverriddenDecl()) {
+        // If the overriden decl won't be printed, printing override will fail
+        // the build of the interface file.
+        if (!Options.shouldPrint(BD))
+          return false;
         if (!BD->hasClangNode() &&
             !BD->getFormalAccessScope(VD->getDeclContext(),
                                       /*treatUsableFromInlineAsPublic*/ true)
@@ -790,7 +794,6 @@ bool DeclAttribute::printImpl(ASTPrinter &Printer, const PrintOptions &Options,
   case DAK_ReferenceOwnership:
   case DAK_Effects:
   case DAK_Optimize:
-  case DAK_ActorIndependent:
     if (DeclAttribute::isDeclModifier(getKind())) {
       Printer.printKeyword(getAttrName(), Options);
     } else if (Options.IsForSwiftInterface && getKind() == DAK_ResultBuilder) {
@@ -878,8 +881,20 @@ bool DeclAttribute::printImpl(ASTPrinter &Printer, const PrintOptions &Options,
     if (Attr->Obsoleted)
       Printer << ", obsoleted: " << Attr->Obsoleted.getValue().getAsString();
 
-    if (!Attr->Rename.empty())
+    if (!Attr->Rename.empty()) {
       Printer << ", renamed: \"" << Attr->Rename << "\"";
+    } else if (Attr->RenameDecl) {
+      Printer << ", renamed: \"";
+      if (auto *Accessor = dyn_cast<AccessorDecl>(Attr->RenameDecl)) {
+        SmallString<32> Name;
+        llvm::raw_svector_ostream OS(Name);
+        Accessor->printUserFacingName(OS);
+        Printer << Name.str();
+      } else {
+        Printer << Attr->RenameDecl->getName();
+      }
+      Printer << "\"";
+    }
 
     // If there's no message, but this is specifically an imported
     // "unavailable in Swift" attribute, synthesize a message to look good in
@@ -942,10 +957,7 @@ bool DeclAttribute::printImpl(ASTPrinter &Printer, const PrintOptions &Options,
     if (target)
       Printer << "target: " << target << ", ";
     SmallVector<Requirement, 4> requirementsScratch;
-    ArrayRef<Requirement> requirements;
-    if (auto sig = attr->getSpecializedSignature())
-      requirements = sig->getRequirements();
-
+    auto requirements = attr->getSpecializedSignature().getRequirements();
     auto *FnDecl = dyn_cast_or_null<AbstractFunctionDecl>(D);
     if (FnDecl && FnDecl->getGenericSignature()) {
       auto genericSig = FnDecl->getGenericSignature();
@@ -1088,20 +1100,6 @@ bool DeclAttribute::printImpl(ASTPrinter &Printer, const PrintOptions &Options,
 #include "swift/AST/Attr.def"
     llvm_unreachable("handled above");
 
-  case DAK_CompletionHandlerAsync: {
-    auto *attr = cast<CompletionHandlerAsyncAttr>(this);
-    Printer.printAttrName("@completionHandlerAsync");
-    Printer << "(\"";
-    if (attr->AsyncFunctionDecl) {
-      Printer << attr->AsyncFunctionDecl->getName();
-    } else {
-      Printer << attr->AsyncFunctionName;
-    }
-    Printer << "\", completionHandlerIndex: " <<
-        attr->CompletionHandlerIndex << ')';
-    break;
-  }
-
   default:
     assert(DeclAttribute::isDeclModifier(getKind()) &&
            "handled above");
@@ -1178,15 +1176,6 @@ StringRef DeclAttribute::getAttrName() const {
     }
     llvm_unreachable("Invalid inline kind");
   }
-  case DAK_ActorIndependent: {
-    switch (cast<ActorIndependentAttr>(this)->getKind()) {
-    case ActorIndependentKind::Safe:
-      return "actorIndependent";
-    case ActorIndependentKind::Unsafe:
-      return "actorIndependent(unsafe)";
-    }
-    llvm_unreachable("Invalid actorIndependent kind");
-  }
   case DAK_Optimize: {
     switch (cast<OptimizeAttr>(this)->getMode()) {
     case OptimizationMode::NoOptimization:
@@ -1246,8 +1235,6 @@ StringRef DeclAttribute::getAttrName() const {
     return "derivative";
   case DAK_Transpose:
     return "transpose";
-  case DAK_CompletionHandlerAsync:
-    return "completionHandlerAsync";
   }
   llvm_unreachable("bad DeclAttrKind");
 }
@@ -1469,11 +1456,22 @@ AvailableAttr::createPlatformAgnostic(ASTContext &C,
     assert(!Obsoleted.empty());
   }
   return new (C) AvailableAttr(
-    SourceLoc(), SourceRange(), PlatformKind::none, Message, Rename,
+    SourceLoc(), SourceRange(), PlatformKind::none, Message, Rename, nullptr,
     NoVersion, SourceRange(),
     NoVersion, SourceRange(),
     Obsoleted, SourceRange(),
     Kind, /* isImplicit */ false);
+}
+
+AvailableAttr *AvailableAttr::createForAlternative(
+    ASTContext &C, AbstractFunctionDecl *AsyncFunc) {
+  llvm::VersionTuple NoVersion;
+  return new (C) AvailableAttr(
+    SourceLoc(), SourceRange(), PlatformKind::none, "", "", AsyncFunc,
+    NoVersion, SourceRange(),
+    NoVersion, SourceRange(),
+    NoVersion, SourceRange(),
+    PlatformAgnosticAvailabilityKind::None, /*Implicit=*/true);
 }
 
 bool AvailableAttr::isActivePlatform(const ASTContext &ctx) const {
@@ -1483,7 +1481,7 @@ bool AvailableAttr::isActivePlatform(const ASTContext &ctx) const {
 AvailableAttr *AvailableAttr::clone(ASTContext &C, bool implicit) const {
   return new (C) AvailableAttr(implicit ? SourceLoc() : AtLoc,
                                implicit ? SourceRange() : getRange(),
-                               Platform, Message, Rename,
+                               Platform, Message, Rename, RenameDecl,
                                Introduced ? *Introduced : llvm::VersionTuple(),
                                implicit ? SourceRange() : IntroducedRange,
                                Deprecated ? *Deprecated : llvm::VersionTuple(),
@@ -1809,7 +1807,7 @@ void DifferentiableAttr::setParameterIndices(IndexSubset *paramIndices) {
 GenericEnvironment *DifferentiableAttr::getDerivativeGenericEnvironment(
     AbstractFunctionDecl *original) const {
   if (auto derivativeGenSig = getDerivativeGenericSignature())
-    return derivativeGenSig->getGenericEnvironment();
+    return derivativeGenSig.getGenericEnvironment();
   return original->getGenericEnvironment();
 }
 

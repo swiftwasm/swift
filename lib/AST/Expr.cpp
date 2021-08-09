@@ -1229,7 +1229,18 @@ UnresolvedSpecializeExpr *UnresolvedSpecializeExpr::create(ASTContext &ctx,
                                              UnresolvedParams, RAngleLoc);
 }
 
+CaptureListEntry::CaptureListEntry(PatternBindingDecl *PBD) : PBD(PBD) {
+  assert(PBD);
+  assert(PBD->getSingleVar() &&
+         "Capture lists only support single-var patterns");
+}
+
+VarDecl *CaptureListEntry::getVar() const {
+  return PBD->getSingleVar();
+}
+
 bool CaptureListEntry::isSimpleSelfCapture() const {
+  auto *Var = getVar();
   auto &ctx = Var->getASTContext();
 
   if (Var->getName() != ctx.Id_self)
@@ -1239,10 +1250,10 @@ bool CaptureListEntry::isSimpleSelfCapture() const {
     if (attr->get() == ReferenceOwnership::Weak)
       return false;
 
-  if (Init->getPatternList().size() != 1)
+  if (PBD->getPatternList().size() != 1)
     return false;
 
-  auto *expr = Init->getInit(0);
+  auto *expr = PBD->getInit(0);
 
   if (auto *DRE = dyn_cast<DeclRefExpr>(expr)) {
     if (auto *VD = dyn_cast<VarDecl>(DRE->getDecl())) {
@@ -1265,7 +1276,7 @@ CaptureListExpr *CaptureListExpr::create(ASTContext &ctx,
   auto *expr = ::new(mem) CaptureListExpr(captureList, closureBody);
 
   for (auto capture : captureList)
-    capture.Var->setParentCaptureList(expr);
+    capture.getVar()->setParentCaptureList(expr);
 
   return expr;
 }
@@ -1768,6 +1779,30 @@ Expr *CallExpr::getDirectCallee() const {
   }
 }
 
+PrefixUnaryExpr *PrefixUnaryExpr::create(ASTContext &ctx, Expr *fn,
+                                         Expr *operand, Type ty) {
+  return new (ctx) PrefixUnaryExpr(fn, operand, ty);
+}
+
+PostfixUnaryExpr *PostfixUnaryExpr::create(ASTContext &ctx, Expr *fn,
+                                           Expr *operand, Type ty) {
+  return new (ctx) PostfixUnaryExpr(fn, operand, ty);
+}
+
+BinaryExpr *BinaryExpr::create(ASTContext &ctx, Expr *lhs, Expr *fn, Expr *rhs,
+                               bool implicit, Type ty) {
+  auto *packedArg = TupleExpr::createImplicit(ctx, {lhs, rhs}, /*labels*/ {});
+  computeSingleArgumentType(ctx, packedArg, /*implicit*/ true,
+                            [](Expr *E) { return E->getType(); });
+  return new (ctx) BinaryExpr(fn, packedArg, implicit, ty);
+}
+
+DotSyntaxCallExpr *DotSyntaxCallExpr::create(ASTContext &ctx, Expr *fnExpr,
+                                             SourceLoc dotLoc, Expr *baseExpr,
+                                             Type ty) {
+  return new (ctx) DotSyntaxCallExpr(fnExpr, dotLoc, baseExpr, ty);
+}
+
 SourceLoc DotSyntaxCallExpr::getLoc() const {
   if (isImplicit()) {
     SourceLoc baseLoc = getBase()->getLoc();
@@ -1793,6 +1828,13 @@ SourceLoc DotSyntaxCallExpr::getEndLoc() const {
   }
 
   return getFn()->getEndLoc();
+}
+
+ConstructorRefCallExpr *ConstructorRefCallExpr::create(ASTContext &ctx,
+                                                       Expr *fnExpr,
+                                                       Expr *baseExpr,
+                                                       Type ty) {
+  return new (ctx) ConstructorRefCallExpr(fnExpr, baseExpr, ty);
 }
 
 void ExplicitCastExpr::setCastType(Type type) {
@@ -1931,10 +1973,11 @@ void AbstractClosureExpr::setParameterList(ParameterList *P) {
 Type AbstractClosureExpr::getResultType(
     llvm::function_ref<Type(Expr *)> getType) const {
   auto *E = const_cast<AbstractClosureExpr *>(this);
-  if (getType(E)->hasError())
-    return getType(E);
+  Type T = getType(E);
+  if (!T || T->hasError())
+    return T;
 
-  return getType(E)->castTo<FunctionType>()->getResult();
+  return T->castTo<FunctionType>()->getResult();
 }
 
 bool AbstractClosureExpr::isBodyThrowing() const {
@@ -2359,7 +2402,7 @@ KeyPathExpr::Component::Component(ASTContext *ctxForCopyingLabels,
     : Decl(decl), SubscriptIndexExpr(indexExpr), KindValue(kind),
       ComponentType(type), Loc(loc)
 {
-  assert(kind != Kind::TupleElement || subscriptLabels.empty());
+  assert(kind == Kind::Subscript || kind == Kind::UnresolvedSubscript);
   assert(subscriptLabels.size() == indexHashables.size()
          || indexHashables.empty());
   SubscriptLabelsData = subscriptLabels.data();
@@ -2398,6 +2441,7 @@ void KeyPathExpr::Component::setSubscriptIndexHashableConformances(
   case Kind::Identity:
   case Kind::TupleElement:
   case Kind::DictionaryKey:
+  case Kind::CodeCompletion:
     llvm_unreachable("no hashable conformances for this kind");
   }
 }

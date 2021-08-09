@@ -464,6 +464,7 @@ public:
     case AccessedStorage::Tail:
       return getObject();
     }
+    llvm_unreachable("covered switch");
   }
 
   /// Visit all access roots. If any roots are visited then the original memory
@@ -1587,6 +1588,11 @@ public:
       return SILValue();
 
     return cloneProjection(cast, sourceOper);
+  }
+
+  SILValue visitNestedAccess(BeginAccessInst *access) {
+    // The cloner does not currently know how to handle begin_access
+    return SILValue();
   }
 
   SILValue visitAccessProjection(SingleValueInstruction *projectedAddr,

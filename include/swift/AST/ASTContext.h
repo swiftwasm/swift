@@ -28,6 +28,7 @@
 #include "swift/Basic/LangOptions.h"
 #include "swift/Basic/Located.h"
 #include "swift/Basic/Malloc.h"
+#include "swift/SymbolGraphGen/SymbolGraphOptions.h"
 #include "clang/AST/DeclTemplate.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/DenseMap.h"
@@ -36,6 +37,7 @@
 #include "llvm/ADT/PointerIntPair.h"
 #include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/SmallPtrSet.h"
+#include "llvm/ADT/StringSet.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/TinyPtrVector.h"
 #include "llvm/Support/Allocator.h"
@@ -104,6 +106,8 @@ namespace swift {
   class InheritedProtocolConformance;
   class SelfProtocolConformance;
   class SpecializedProtocolConformance;
+  enum class BuiltinConformanceKind;
+  class BuiltinProtocolConformance;
   enum class ProtocolConformanceState;
   class Pattern;
   enum PointerTypeKind : unsigned;
@@ -131,6 +135,10 @@ namespace swift {
 
 namespace namelookup {
   class ImportCache;
+}
+
+namespace rewriting {
+  class RequirementMachine;
 }
 
 namespace syntax {
@@ -230,6 +238,7 @@ class ASTContext final {
   ASTContext(LangOptions &langOpts, TypeCheckerOptions &typeckOpts,
              SearchPathOptions &SearchPathOpts,
              ClangImporterOptions &ClangImporterOpts,
+             symbolgraphgen::SymbolGraphOptions &SymbolGraphOpts,
              SourceManager &SourceMgr,
              DiagnosticEngine &Diags);
 
@@ -245,6 +254,7 @@ public:
   static ASTContext *get(LangOptions &langOpts, TypeCheckerOptions &typeckOpts,
                          SearchPathOptions &SearchPathOpts,
                          ClangImporterOptions &ClangImporterOpts,
+                         symbolgraphgen::SymbolGraphOptions &SymbolGraphOpts,
                          SourceManager &SourceMgr, DiagnosticEngine &Diags);
   ~ASTContext();
 
@@ -265,6 +275,9 @@ public:
 
   /// The clang importer options used by this AST context.
   ClangImporterOptions &ClangImporterOpts;
+
+  /// The symbol graph generation options used by this AST context.
+  symbolgraphgen::SymbolGraphOptions &SymbolGraphOpts;
 
   /// The source manager object.
   SourceManager &SourceMgr;
@@ -520,6 +533,11 @@ public:
   FuncDecl *get##Name() const;
 #include "swift/AST/KnownDecls.def"
 
+  // Declare accessors for the known declarations.
+#define KNOWN_SDK_FUNC_DECL(Module, Name, Id) \
+  FuncDecl *get##Name() const;
+#include "swift/AST/KnownSDKDecls.def"
+
   /// Get the '+' function on two RangeReplaceableCollection.
   FuncDecl *getPlusFunctionOnRangeReplaceableCollection() const;
 
@@ -590,6 +608,11 @@ public:
 
   // Retrieve the declaration of Swift._stdlib_isOSVersionAtLeast.
   FuncDecl *getIsOSVersionAtLeastDecl() const;
+
+  /// Look for the declaration with the given name within the
+  /// passed in module.
+  void lookupInModule(ModuleDecl *M, StringRef name,
+                      SmallVectorImpl<ValueDecl *> &results) const;
 
   /// Look for the declaration with the given name within the
   /// Swift module.
@@ -733,6 +756,14 @@ public:
   /// Get the runtime availability of support for differentiation.
   AvailabilityContext getDifferentiationAvailability();
 
+  /// Get the runtime availability of getters and setters of multi payload enum
+  /// tag single payloads.
+  AvailabilityContext getMultiPayloadEnumTagSinglePayload();
+
+  /// Get the runtime availability of the Objective-C enabled
+  /// swift_isUniquelyReferenced functions.
+  AvailabilityContext getObjCIsUniquelyReferencedAvailability();
+
   /// Get the runtime availability of features introduced in the Swift 5.2
   /// compiler for the target platform.
   AvailabilityContext getSwift52Availability();
@@ -748,6 +779,10 @@ public:
   /// Get the runtime availability of features introduced in the Swift 5.5
   /// compiler for the target platform.
   AvailabilityContext getSwift55Availability();
+
+  /// Get the runtime availability of features introduced in the Swift 5.6
+  /// compiler for the target platform.
+  AvailabilityContext getSwift56Availability();
 
   /// Get the runtime availability of features that have been introduced in the
   /// Swift compiler for future versions of the target platform.
@@ -824,6 +859,13 @@ public:
       StringRef moduleName,
       ModuleDependenciesCache &cache,
       InterfaceSubContextDelegate &delegate);
+
+  /// Compute the extra implicit framework search paths on Apple platforms:
+  /// $SDKROOT/System/Library/Frameworks/ and $SDKROOT/Library/Frameworks/.
+  std::vector<std::string> getDarwinImplicitFrameworkSearchPaths() const;
+
+  /// Return a set of all possible filesystem locations where modules can be found.
+  llvm::StringSet<> getAllModuleSearchPathsSet() const;
 
   /// Load extensions to the given nominal type from the external
   /// module loaders.
@@ -994,11 +1036,19 @@ public:
                  ProtocolDecl *protocol,
                  SourceLoc loc,
                  DeclContext *dc,
-                 ProtocolConformanceState state);
+                 ProtocolConformanceState state,
+                 bool isUnchecked);
 
   /// Produce a self-conformance for the given protocol.
   SelfProtocolConformance *
   getSelfConformance(ProtocolDecl *protocol);
+
+  /// Produce the builtin conformance for some structural type to some protocol.
+  BuiltinProtocolConformance *
+  getBuiltinConformance(Type type, ProtocolDecl *protocol,
+                        GenericSignature genericSig,
+                        ArrayRef<Requirement> conditionalRequirements,
+                        BuiltinConformanceKind kind);
 
   /// A callback used to produce a diagnostic for an ill-formed protocol
   /// conformance that was type-checked before we're actually walking the
@@ -1131,6 +1181,16 @@ public:
   /// canonical generic signature and module.
   GenericSignatureBuilder *getOrCreateGenericSignatureBuilder(
                                                      CanGenericSignature sig);
+
+  /// Retrieve or create a term rewriting system for answering queries on
+  /// type parameters written against the given generic signature.
+  rewriting::RequirementMachine *getOrCreateRequirementMachine(
+      CanGenericSignature sig);
+
+  /// This is a hack to break cycles. Don't introduce new callers of this
+  /// method.
+  bool isRecursivelyConstructingRequirementMachine(
+      CanGenericSignature sig);
 
   /// Retrieve a generic signature with a single unconstrained type parameter,
   /// like `<T>`.

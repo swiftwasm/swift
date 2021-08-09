@@ -86,7 +86,7 @@ class ReferencedTypeFinder : public TypeDeclFinder {
     auto sig = decl->getGenericSignature();
 
     for_each(boundGeneric->getGenericArgs(),
-             sig->getInnermostGenericParams(),
+             sig.getInnermostGenericParams(),
              [&](Type argTy, GenericTypeParamType *paramTy) {
       // FIXME: I think there's a bug here with recursive generic types.
       if (isObjCGeneric && isConstrained(sig, paramTy))
@@ -598,6 +598,8 @@ public:
 void
 swift::printModuleContentsAsObjC(raw_ostream &os,
                                  llvm::SmallPtrSetImpl<ImportModuleTy> &imports,
-                                 ModuleDecl &M, AccessLevel minRequiredAccess) {
-  ModuleWriter(os, imports, M, minRequiredAccess).write();
+                                 ModuleDecl &M) {
+  auto requiredAccess = M.isExternallyConsumed() ? AccessLevel::Public
+                                                 : AccessLevel::Internal;
+  ModuleWriter(os, imports, M, requiredAccess).write();
 }

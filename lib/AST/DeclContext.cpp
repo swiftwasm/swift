@@ -679,7 +679,7 @@ unsigned DeclContext::printContext(raw_ostream &OS, const unsigned indent,
     }
     case InitializerKind::PropertyWrapper: {
       auto init = cast<PropertyWrapperInitializer>(this);
-      OS << "PropertyWrapper 0x" << (void*)init->getParam() << ", kind=";
+      OS << "PropertyWrapper 0x" << (void*)init->getWrappedVar() << ", kind=";
       switch (init->getKind()) {
       case PropertyWrapperInitializer::Kind::WrappedValue:
         OS << "wrappedValue";
@@ -1038,11 +1038,22 @@ IterableDeclContext::castDeclToIterableDeclContext(const Decl *D) {
 }
 
 Optional<Fingerprint> IterableDeclContext::getBodyFingerprint() const {
-  auto mutableThis = const_cast<IterableDeclContext *>(this);
-  return evaluateOrDefault(getASTContext().evaluator,
-                           ParseMembersRequest{mutableThis},
-                           FingerprintAndMembers())
-      .fingerprint;
+  auto fileUnit = dyn_cast<FileUnit>(getAsGenericContext()->getModuleScopeContext());
+  if (!fileUnit)
+    return None;
+
+  if (isa<SourceFile>(fileUnit)) {
+    auto mutableThis = const_cast<IterableDeclContext *>(this);
+    return evaluateOrDefault(getASTContext().evaluator,
+                             ParseMembersRequest{mutableThis},
+                             FingerprintAndMembers())
+        .fingerprint;
+  }
+
+  if (getDecl()->isImplicit())
+    return None;
+
+  return fileUnit->loadFingerprint(this);
 }
 
 /// Return the DeclContext to compare when checking private access in
@@ -1293,4 +1304,23 @@ static bool isSpecializeExtensionContext(const DeclContext *dc) {
 
 bool DeclContext::isInSpecializeExtensionContext() const {
    return isSpecializeExtensionContext(this);
+}
+
+bool DeclContext::isAlwaysAvailableConformanceContext() const {
+  auto *ext = dyn_cast<ExtensionDecl>(this);
+  if (ext == nullptr)
+    return true;
+
+  if (AvailableAttr::isUnavailable(ext))
+    return false;
+
+  auto &ctx = getASTContext();
+
+  AvailabilityContext conformanceAvailability{
+      AvailabilityInference::availableRange(ext, ctx)};
+
+  auto deploymentTarget =
+      AvailabilityContext::forDeploymentTarget(ctx);
+
+  return deploymentTarget.isContainedIn(conformanceAvailability);
 }
