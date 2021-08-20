@@ -267,6 +267,8 @@ class BuildScriptInvocation(object):
 
         if not args.build_android:
             impl_args += ["--skip-build-android"]
+        if not args.build_wasm:
+             impl_args += ["--skip-build-wasm"]
         if not args.build_clang_tools_extra:
             impl_args += ["--skip-build-clang-tools-extra"]
 
@@ -319,6 +321,11 @@ class BuildScriptInvocation(object):
                 "--android-deploy-device-path",
                 args.android_deploy_device_path,
             ]
+
+        if args.wasm:
+             impl_args += [
+                 "--wasi-sysroot", args.wasi_sysroot,
+             ]
 
         if platform.system() == 'Darwin':
             impl_args += [
