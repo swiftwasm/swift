@@ -580,16 +580,6 @@ def enable_experimental_concise_pound_file : Flag<["-"],
   Flags<[FrontendOption, ModuleInterfaceOption]>,
   HelpText<"Enable experimental concise '#file' identifier">;
 
-def disable_fuzzy_forward_scan_trailing_closure_matching : Flag<["-"],
-    "disable-fuzzy-forward-scan-trailing-closure-matching">,
-  Flags<[FrontendOption]>,
-  HelpText<"Disable fuzzy forward-scan trailing closure matching">;
-
-def enable_fuzzy_forward_scan_trailing_closure_matching : Flag<["-"],
-    "enable-fuzzy-forward-scan-trailing-closure-matching">,
-  Flags<[FrontendOption]>,
-  HelpText<"Enable fuzzy forward-scan trailing closure matching">;
-
 def enable_experimental_cxx_interop :
   Flag<["-"], "enable-experimental-cxx-interop">,
   HelpText<"Allow importing C++ modules into Swift (experimental feature)">;
@@ -659,7 +649,7 @@ def warn_swift3_objc_inference : Flag<["-"], "warn-swift3-objc-inference">,
   Flags<[FrontendOption, DoesNotAffectIncrementalBuild, HelpHidden]>;
 
 def warn_concurrency : Flag<["-"], "warn-concurrency">,
-  Flags<[FrontendOption, DoesNotAffectIncrementalBuild]>,
+  Flags<[FrontendOption, DoesNotAffectIncrementalBuild, ModuleInterfaceOptionIgnorable]>,
   HelpText<"Warn about code that is unsafe according to the Swift Concurrency "
            "model and will become ill-formed in a future language version">;
 

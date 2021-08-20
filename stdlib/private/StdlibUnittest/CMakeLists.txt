@@ -46,7 +46,7 @@ add_swift_target_library(swiftStdlibUnittest ${SWIFT_STDLIB_LIBRARY_BUILD_TYPES}
   SWIFT_MODULE_DEPENDS_OSX Darwin Foundation SwiftPrivateThreadExtras
   SWIFT_MODULE_DEPENDS_TVOS Darwin Foundation SwiftPrivateThreadExtras
   SWIFT_MODULE_DEPENDS_WATCHOS Darwin Foundation SwiftPrivateThreadExtras
-  SWIFT_MODULE_DEPENDS_FREESTANDING Darwin SwiftPrivateThreadExtras
+  SWIFT_MODULE_DEPENDS_FREESTANDING "${SWIFT_FREESTANDING_TEST_DEPENDENCIES}" SwiftPrivateThreadExtras
   SWIFT_MODULE_DEPENDS_LINUX Glibc SwiftPrivateThreadExtras
   SWIFT_MODULE_DEPENDS_FREEBSD Glibc SwiftPrivateThreadExtras
   SWIFT_MODULE_DEPENDS_OPENBSD Glibc SwiftPrivateThreadExtras

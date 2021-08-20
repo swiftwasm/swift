@@ -376,6 +376,10 @@ public:
   /// a local variable.
   llvm::DenseMap<ValueDecl*, VarLoc> VarLocs;
 
+  /// The local auxiliary declarations for the parameters of this function that
+  /// need to be emitted inside the next brace statement.
+  llvm::SmallVector<VarDecl *, 2> LocalAuxiliaryDecls;
+
   // Context information for tracking an `async let` child task.
   struct AsyncLetChildTask {
     SILValue asyncLet; // RawPointer to the async let state
@@ -625,10 +629,6 @@ public:
   /// destructor, then implicitly releases the elements of the class.
   void emitDestroyingDestructor(DestructorDecl *dd);
 
-  /// Inject distributed actor and transport interaction code into the destructor.
-  void injectDistributedActorDestructorLifecycleCall(
-      DestructorDecl *dd, SILValue selfValue, SILBasicBlock *continueBB);
-
   /// Generates code for an artificial top-level function that starts an
   /// application based on a main type and optionally a main type.
   void emitArtificialTopLevel(Decl *mainDecl);
@@ -685,9 +685,6 @@ public:
   /// Returns the SILFunction created for the closure implementation function that is enqueued on the
   /// new task.
   SILFunction *emitNativeAsyncToForeignThunk(SILDeclRef thunk);
-
-  /// Generates a thunk from an actor function
-  void emitDistributedThunk(SILDeclRef thunk);
 
   /// Generate a nullary function that returns the given value.
   /// If \p emitProfilerIncrement is set, emit a profiler increment for
@@ -1996,6 +1993,34 @@ public:
                                            CanSILFunctionType toType,
                                            bool reorderSelf);
 
+  //===---------------------------------------------------------------------===//
+  // Distributed Actors
+  //===---------------------------------------------------------------------===//
+
+  /// Initialize the distributed actors transport and id.
+  void initializeDistributedActorImplicitStorageInit(
+      ConstructorDecl *ctor, ManagedValue selfArg);
+
+  /// Given a function representing a distributed actor factory, emits the
+  /// corresponding SIL function for it.
+  void emitDistributedActorFactory(FuncDecl *fd);
+
+  /// Generates a thunk from an actor function
+  void emitDistributedThunk(SILDeclRef thunk);
+
+  /// Notify transport that actor has initialized successfully,
+  /// and is ready to receive messages.
+  void emitDistributedActorReady(
+      ConstructorDecl *ctor, ManagedValue selfArg);
+
+  /// Inject distributed actor and transport interaction code into the destructor.
+  void emitDistributedActor_resignAddress(
+      DestructorDecl *dd, SILValue selfValue, SILBasicBlock *continueBB);
+
+  void emitDistributedActorClassMemberDestruction(
+      SILLocation cleanupLoc, ManagedValue selfValue, ClassDecl *cd,
+      SILBasicBlock *normalMemberDestroyBB, SILBasicBlock *finishBB);
+
   //===--------------------------------------------------------------------===//
   // Declarations
   //===--------------------------------------------------------------------===//
@@ -2088,6 +2113,9 @@ public:
 
   /// Destroy and deallocate an initialized local variable.
   void destroyLocalVariable(SILLocation L, VarDecl *D);
+
+  /// Destroy the class member.
+  void destroyClassMember(SILLocation L, ManagedValue selfValue, VarDecl *D);
 
   /// Enter a cleanup to deallocate a stack variable.
   CleanupHandle enterDeallocStackCleanup(SILValue address);

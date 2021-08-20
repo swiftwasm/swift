@@ -514,31 +514,18 @@ void SILGenFunction::emitFunction(FuncDecl *fd) {
   emitProfilerIncrement(fd->getTypecheckedBody());
   emitProlog(captureInfo, fd->getParameters(), fd->getImplicitSelfDecl(), fd,
              fd->getResultInterfaceType(), fd->hasThrows(), fd->getThrowsLoc());
-  prepareEpilog(true, fd->hasThrows(), CleanupLocation(fd));
 
-  if (llvm::any_of(
-          *fd->getParameters(),
-          [](ParamDecl *p){ return p->hasAttachedPropertyWrapper(); })) {
-    // If any parameters have property wrappers, emit the local auxiliary
-    // variables before emitting the function body.
-    LexicalScope BraceScope(*this, CleanupLocation(fd));
-    for (auto *param : *fd->getParameters()) {
-      param->visitAuxiliaryDecls([&](VarDecl *auxiliaryVar) {
-        SILLocation WrapperLoc(auxiliaryVar);
-        WrapperLoc.markAsPrologue();
-        if (auto *patternBinding = auxiliaryVar->getParentPatternBinding())
-          visitPatternBindingDecl(patternBinding);
-
-        visit(auxiliaryVar);
-      });
-    }
-
-    emitStmt(fd->getTypecheckedBody());
+  if (fd->isDistributedActorFactory()) {
+    // Synthesize the factory function body
+    emitDistributedActorFactory(fd);
   } else {
+    prepareEpilog(true, fd->hasThrows(), CleanupLocation(fd));
+    
+    // Emit the actual function body as usual
     emitStmt(fd->getTypecheckedBody());
-  }
 
-  emitEpilog(fd);
+    emitEpilog(fd);
+  }
 
   mergeCleanupBlocks();
 }
@@ -553,11 +540,6 @@ void SILGenFunction::emitClosure(AbstractClosureExpr *ace) {
   emitProlog(captureInfo, ace->getParameters(), /*selfParam=*/nullptr,
              ace, resultIfaceTy, ace->isBodyThrowing(), ace->getLoc());
   prepareEpilog(true, ace->isBodyThrowing(), CleanupLocation(ace));
-  for (auto *param : *ace->getParameters()) {
-    param->visitAuxiliaryDecls([&](VarDecl *auxiliaryVar) {
-      visit(auxiliaryVar);
-    });
-  }
 
   if (auto *ce = dyn_cast<ClosureExpr>(ace)) {
     emitStmt(ce->getBody());

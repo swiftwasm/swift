@@ -1861,6 +1861,9 @@ WARNING(spi_attribute_on_import_of_public_module,none,
         (DeclName, StringRef))
 
 // Opaque return types
+ERROR(structural_opaque_types_are_experimental,none,
+      "'opaque' types cannot be nested inside other types; "
+      "structural 'opaque' types are an experimental feature", ())
 ERROR(opaque_type_invalid_constraint,none,
       "an 'opaque' type must specify only 'Any', 'AnyObject', protocols, "
       "and/or a base class", ())
@@ -1936,6 +1939,12 @@ NOTE(nonsendable_function_type,none,
 NOTE(nonsendable_tuple_type,none,
      "a tuple type must be composed of 'Sendable' elements to conform to "
      "'Sendable'", ())
+NOTE(non_sendable_nominal,none,
+     "%0 %1 does not conform to the `Sendable` protocol",
+      (DescriptiveDeclKind, DeclName))
+NOTE(add_nominal_sendable_conformance,none,
+     "consider making %0 %1 conform to the 'Sendable' protocol",
+     (DescriptiveDeclKind, DeclName))
 
 NOTE(required_by_opaque_return,none,
     "required by opaque return type of %0 %1", (DescriptiveDeclKind, DeclName))
@@ -4489,20 +4498,20 @@ NOTE(protocol_isolated_to_global_actor_here,none,
 ERROR(isolated_parameter_not_actor,none,
       "'isolated' parameter has non-actor type %0", (Type))
       
-WARNING(non_concurrent_param_type,none,
+WARNING(non_sendable_param_type,none,
         "cannot pass argument of non-sendable type %0 across actors",
         (Type))
-WARNING(non_concurrent_result_type,none,
+WARNING(non_sendable_result_type,none,
         "cannot call function returning non-sendable type %0 across "
         "actors", (Type))
-WARNING(non_concurrent_property_type,none,
-        "cannot use %0 %1 with a non-sendable type %2 "
+WARNING(non_sendable_property_type,none,
+        "cannot use %1 %2 with a non-sendable type %0 "
         "%select{across actors|from concurrently-executed code}3",
-        (DescriptiveDeclKind, DeclName, Type, bool))
-WARNING(non_concurrent_keypath_capture,none,
+        (Type, DescriptiveDeclKind, DeclName, bool))
+WARNING(non_sendable_keypath_capture,none,
         "cannot form key path that captures non-sendable type %0",
         (Type))
-WARNING(non_concurrent_keypath_access,none,
+WARNING(non_sendable_keypath_access,none,
         "cannot form key path that accesses non-sendable type %0",
         (Type))
 ERROR(non_concurrent_type_member,none,
@@ -4525,9 +4534,6 @@ ERROR(concurrent_value_inherit,none,
       (bool, DeclName))
 ERROR(non_sendable_type,none,
       "type %0 does not conform to the 'Sendable' protocol", (Type))
-ERROR(non_sendable_function_type,none,
-     "function type %0 must be marked '@Sendable' to conform to 'Sendable'",
-      (Type))
 
 WARNING(unchecked_conformance_not_special,none,
       "@unchecked conformance to %0 has no meaning", (Type))
@@ -4555,27 +4561,6 @@ ERROR(actor_instance_property_wrapper,none,
 ERROR(distributed_actor_func_defined_outside_of_distributed_actor,none,
       "distributed function %0 is declared outside of an distributed actor",
       (DeclName))
-ERROR(distributed_actor_local_init_explicitly_defined,none,
-      "'distributed actor' local-initializer 'init(transport:)' "
-      "cannot be implemented explicitly.",
-      ())
-ERROR(distributed_actor_init_resolve_must_not_be_user_defined,none,
-      "'distributed actor' resolve-initializer 'init(resolve:using:)' "
-      "cannot be implemented explicitly.",
-      ())
-ERROR(distributed_actor_init_user_defined_must_be_convenience,none,
-      "'distributed actor' initializer %0 must be 'convenience' initializer. "
-      "Distributed actors have an implicitly synthesized designated "
-      "'init(transport:)' local-initializer, which other initializers must delegate to",
-      (DeclName))
-ERROR(distributed_actor_init_must_delegate_to_local_init,none,
-      "'distributed actor' initializer %0 must (directly or indirectly) delegate "
-      "to 'init(transport:)'",
-      (DeclName))
-ERROR(distributed_actor_init_must_not_delegate_to_resolve_init,none,
-      "'distributed actor' initializer %0 cannot delegate to resolve-initializer "
-      "'init(resolve:using:)', as it may result resolving a storageless proxy instance",
-      (DeclName))
 ERROR(distributed_actor_local_var,none,
       "'distributed' can not be applied to local variables",
       ())
@@ -4599,6 +4584,18 @@ ERROR(distributed_actor_func_static,none,
 ERROR(distributed_actor_func_not_in_distributed_actor,none,
       "'distributed' function can only be declared within 'distributed actor'",
       ())
+ERROR(distributed_actor_designated_ctor_must_have_one_transport_param,none,
+      "designated distributed actor initializer %0 must accept exactly one "
+      "ActorTransport parameter, found %1",
+      (DeclName, int))
+ERROR(distributed_actor_designated_ctor_missing_transport_param,none,
+      "designated distributed actor initializer %0 is missing required "
+      "ActorTransport parameter",
+      (DeclName))
+ERROR(distributed_actor_user_defined_special_property,none,
+      "property %0 cannot be defined explicitly, as it conflicts with "
+      "distributed actor synthesized stored property",
+      (DeclName))
 ERROR(distributed_actor_independent_property_must_be_let,none,
       "_distributedActorIndependent can be applied to properties, however they must be 'let'",
       ())
@@ -5888,6 +5885,12 @@ NOTE(result_builder_missing_build_array, none,
 NOTE(result_builder_missing_build_limited_availability, none,
      "add 'buildLimitedAvailability(_:)' to the result "
      "builder %0 to erase type information for less-available types", (Type))
+ERROR(result_builder_requires_explicit_var_initialization,none,
+      "local variable%select{| '%1'}0 requires explicit initializer to be used with "
+      "result builder %2", (bool, StringRef, DeclName))
+ERROR(cannot_declare_computed_var_in_result_builder,none,
+      "cannot declare local %select{lazy|wrapped|computed|observed}0 variable "
+      "in result builder", (unsigned))
 
 //------------------------------------------------------------------------------
 // MARK: Tuple Shuffle Diagnostics

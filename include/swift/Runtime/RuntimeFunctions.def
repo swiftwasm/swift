@@ -1687,28 +1687,20 @@ FUNCTION(DefaultActorDeallocateResilient,
          ARGS(RefCountedPtrTy),
          ATTRS(NoUnwind))
 
-// void swift_distributedActor_remote_initialize(DefaultActor *actor);
+// OpaqueValue* swift_distributedActor_remote_initialize(
+//    const Metadata *actorType
+// );
 FUNCTION(DistributedActorInitializeRemote,
          swift_distributedActor_remote_initialize, SwiftCC,
-         ConcurrencyAvailability,
-         RETURNS(VoidTy),
-         ARGS(RefCountedPtrTy), // TODO also address and transport?
+         ConcurrencyAvailability, // TODO(distributed): Introduce DistributedAvailability once shipping somewhere
+         RETURNS(OpaquePtrTy),
+         ARGS(TypeMetadataPtrTy),
          ATTRS(NoUnwind))
 
-// OpaqueValue* swift_distributedActor_remote_create(
-//     OpaqueValue *identity,
-//     OpaqueValue *transport);
-FUNCTION(DistributedActorRemoteCreate,
-         swift_distributedActor_remote_create, SwiftCC,
-         ConcurrencyAvailability,
-         RETURNS(OpaquePtrTy), // TODO: is this the right type here?
-         ARGS(OpaquePtrTy, OpaquePtrTy),
-         ATTRS(NoUnwind))
-
-// void swift_distributedActor_destroy(DefaultActor *actor); // TODO: ProxyActor *proxy?
+// void swift_distributedActor_destroy(DefaultActor *actor);
 FUNCTION(DistributedActorDestroy,
          swift_distributedActor_destroy, SwiftCC,
-         ConcurrencyAvailability,
+         ConcurrencyAvailability, // TODO(distributed): Introduce DistributedAvailability once shipping somewhere
          RETURNS(VoidTy),
          ARGS(RefCountedPtrTy),
          ATTRS(NoUnwind))

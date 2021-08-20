@@ -535,6 +535,18 @@ namespace swift {
     /// until the next major language version.
     InFlightDiagnostic &warnUntilSwiftVersion(unsigned majorVersion);
 
+    /// Conditionally limit the diagnostic behavior to warning until
+    /// the specified version.  If the condition is false, no limit is
+    /// imposed, meaning (presumably) it is treated as an error.
+    ///
+    /// This helps stage in fixes for stricter diagnostics as warnings
+    /// until the next major language version.
+    InFlightDiagnostic &warnUntilSwiftVersionIf(bool shouldLimit,
+                                                unsigned majorVersion) {
+      if (!shouldLimit) return *this;
+      return warnUntilSwiftVersion(majorVersion);
+    }
+
     /// Wraps this diagnostic in another diagnostic. That is, \p wrapper will be
     /// emitted in place of the diagnostic that otherwise would have been
     /// emitted.
@@ -1116,6 +1128,8 @@ namespace swift {
     void emitTentativeDiagnostics();
 
   public:
+    DiagnosticKind declaredDiagnosticKindFor(const DiagID id);
+
     llvm::StringRef diagnosticStringFor(const DiagID id,
                                         bool printDiagnosticNames);
 
@@ -1312,6 +1326,26 @@ namespace swift {
     parentDiag.flush();
     builder();
   }
+
+/// Temporary on-stack storage and unescaping for encoded diagnostic
+/// messages.
+class EncodedDiagnosticMessage {
+  llvm::SmallString<128> Buf;
+
+public:
+  /// \param S A string with an encoded message
+  EncodedDiagnosticMessage(StringRef S);
+
+  /// The unescaped message to display to the user.
+  const StringRef Message;
+};
+
+/// Returns a value that can be used to select between accessor kinds in
+/// diagnostics.
+///
+/// This is correlated with diag::availability_deprecated and others.
+std::pair<unsigned, DeclName>
+getAccessorKindAndNameForDiagnostics(const ValueDecl *D);
 
 } // end namespace swift
 

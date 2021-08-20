@@ -859,7 +859,7 @@ OwnershipRAUWHelper::OwnershipRAUWHelper(OwnershipFixupContext &inputCtx,
   // Otherwise, lets check if we can perform this RAUW operation. If we can't,
   // set ctx to nullptr to invalidate the helper and return.
   if (!canFixUpOwnershipForRAUW(oldValue, newValue, inputCtx)) {
-    ctx = nullptr;
+    invalidate();
     return;
   }
 
@@ -903,43 +903,31 @@ OwnershipRAUWHelper::OwnershipRAUWHelper(OwnershipFixupContext &inputCtx,
   //
   // NOTE: We also need to handle this here since a pointer_to_address is not a
   // valid base value for an access path since it doesn't refer to any storage.
-  {
-    auto baseProj =
-        getUnderlyingObjectStoppingAtObjectToAddrProjections(newValue);
-    if (isa<PointerToAddressInst>(baseProj)) {
-      return;
-    }
-  }
+  BorrowedAddress borrowedAddress(newValue);
+  if (!borrowedAddress.mayBeBorrowed)
+    return;
 
-  auto accessPathWithBase = AccessPathWithBase::compute(newValue);
-  if (!accessPathWithBase.base) {
-    // Invalidate!
-    ctx = nullptr;
+  if (!borrowedAddress.interiorPointerOp) {
+    invalidate();
     return;
   }
 
-  auto &intPtr = ctx->extraAddressFixupInfo.intPtrOp;
-  intPtr = InteriorPointerOperand::inferFromResult(accessPathWithBase.base);
-  if (!intPtr) {
-    // We can optimize! Do not invalidate!
-    return;
-  }
-
-  auto borrowedValue = intPtr.getSingleBaseValue();
+  ctx->extraAddressFixupInfo.intPtrOp = borrowedAddress.interiorPointerOp;
+  auto borrowedValue = borrowedAddress.interiorPointerOp.getSingleBaseValue();
   if (!borrowedValue) {
-    // Invalidate!
-    ctx = nullptr;
+    invalidate();
     return;
   }
 
+  auto *intPtrInst =
+    cast<SingleValueInstruction>(borrowedAddress.interiorPointerOp.getUser());
+  auto checkBase = [&](SILValue srcAddr) {
+    return (srcAddr == intPtrInst) ? SILValue(intPtrInst) : SILValue();
+  };
   // This cloner check must match the later cloner invocation in
   // replaceAddressUses()
-  auto *intPtrUser = cast<SingleValueInstruction>(intPtr->getUser());
-  auto checkBase = [&](SILValue srcAddr) {
-    return (srcAddr == intPtrUser) ? SILValue(intPtrUser) : SILValue();
-  };
   if (!canCloneUseDefChain(newValue, checkBase)) {
-    ctx = nullptr;
+    invalidate();
     return;
   }
 
@@ -947,8 +935,7 @@ OwnershipRAUWHelper::OwnershipRAUWHelper(OwnershipFixupContext &inputCtx,
   auto &oldValueUses = ctx->extraAddressFixupInfo.allAddressUsesFromOldValue;
   if (InteriorPointerOperand::findTransitiveUsesForAddress(oldValue,
                                                            oldValueUses)) {
-    // If we found an error, invalidate and return!
-    ctx = nullptr;
+    invalidate();
     return;
   }
 
@@ -1193,14 +1180,14 @@ OwnershipReplaceSingleUseHelper::OwnershipReplaceSingleUseHelper(
 
   // If we have an address, bail. We don't support this.
   if (newValue->getType().isAddress()) {
-    ctx = nullptr;
+    invalidate();
     return;
   }
 
   // Otherwise, lets check if we can perform this RAUW operation. If we can't,
   // set ctx to nullptr to invalidate the helper and return.
   if (!hasValidRAUWOwnership(use->get(), newValue)) {
-    ctx = nullptr;
+    invalidate();
     return;
   }
 

@@ -149,6 +149,9 @@ namespace swift {
     /// Should potential unavailability on enum cases be downgraded to a warning?
     bool WarnOnPotentiallyUnavailableEnumCase = false;
 
+    /// Should the editor placeholder error be downgraded to a warning?
+    bool WarnOnEditorPlaceholder = false;
+
     /// Maximum number of typo corrections we are allowed to perform.
     /// This is disabled by default until we can get typo-correction working within acceptable performance bounds.
     unsigned TypoCorrectionLimit = 0;
@@ -298,10 +301,13 @@ namespace swift {
     /// Enable experimental concurrency model.
     bool EnableExperimentalConcurrency = false;
 
-    /// Enable experimental support for additional opaque return type features,
-    /// i.e. named opaque return types (with 'where' clause support), and opaque
-    /// types in nested position within the function return type.
-    bool EnableExperimentalOpaqueReturnTypes = false;
+    /// Enable experimental support for named opaque result types, e.g.
+    /// `func f() -> <T> T`.
+    bool EnableExperimentalNamedOpaqueTypes = false;
+
+    /// Enable experimental support for structural opaque result types, e.g.
+    /// `func f() -> (some P)?`.
+    bool EnableExperimentalStructuralOpaqueTypes = false;
 
     /// Enable experimental flow-sensitive concurrent captures.
     bool EnableExperimentalFlowSensitiveConcurrentCaptures = false;
@@ -329,14 +335,6 @@ namespace swift {
     /// Whether to enable the new operator decl and precedencegroup lookup
     /// behavior. This is a staging flag, and will be removed in the future.
     bool EnableNewOperatorLookup = false;
-
-    /// Whether to enable the "fuzzy" forward-scanning behavior for trailing
-    /// closure matching, which skips over defaulted closure parameters
-    /// to match later (non-defaulted) closure parameters
-    ///
-    /// This is a backward-compatibility hack for unlabeled trailing closures,
-    /// to be disabled in Swift 6+.
-    bool EnableFuzzyForwardScanTrailingClosureMatching = true;
 
     /// Use Clang function types for computing canonical types.
     /// If this option is false, the clang function types will still be computed

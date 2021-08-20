@@ -1020,6 +1020,9 @@ diagnosePotentialOpaqueTypeUnavailability(SourceRange ReferenceRange,
                                           const DeclContext *ReferenceDC,
                                           const UnavailabilityReason &Reason);
 
+/// Type check a 'distributed actor' declaration.
+void checkDistributedActor(ClassDecl *decl);
+
 void checkConcurrencyAvailability(SourceRange ReferenceRange,
                                   const DeclContext *ReferenceDC);
 
@@ -1162,22 +1165,6 @@ bool typeSupportsBuilderOp(Type builderType, DeclContext *dc, Identifier fnName,
 void applyAccessNote(ValueDecl *VD);
 
 }; // namespace TypeChecker
-
-/// Temporary on-stack storage and unescaping for encoded diagnostic
-/// messages.
-///
-///
-class EncodedDiagnosticMessage {
-  llvm::SmallString<128> Buf;
-
-public:
-  /// \param S A string with an encoded message
-  EncodedDiagnosticMessage(StringRef S)
-      : Message(Lexer::getEncodedStringSegment(S, Buf, true, true, ~0U)) {}
-
-  /// The unescaped message to display to the user.
-  const StringRef Message;
-};
 
 /// Returns the protocol requirement kind of the given declaration.
 /// Used in diagnostics.
