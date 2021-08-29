@@ -131,6 +131,9 @@ static llvm::cl::list<std::string>
     ImportPaths("I",
                 llvm::cl::desc("Add a directory to the import search path"));
 
+static llvm::cl::opt<std::string>
+Triple("target", llvm::cl::desc("target triple"));
+
 enum class DumpType {
   REWRITTEN,
   JSON,
@@ -284,6 +287,8 @@ int main(int argc, char *argv[]) {
 
   Invocation.setSDKPath(options::SDK);
   Invocation.setImportSearchPaths(options::ImportPaths);
+  if (!options::Triple.empty())
+    Invocation.setTargetTriple(options::Triple);
 
   Invocation.getFrontendOptions().InputsAndOutputs.addInputFile(
       options::SourceFilename);
@@ -394,9 +399,9 @@ int main(int argc, char *argv[]) {
 
   if (options::Action == RefactoringKind::None) {
     llvm::SmallVector<RefactoringKind, 32> Kinds;
-    bool RangeStartMayNeedRename = false;
-    collectAvailableRefactorings(SF, Range, RangeStartMayNeedRename, Kinds,
-                                 {&PrintDiags});
+    bool CollectRangeStartRefactorings = false;
+    collectAvailableRefactorings(SF, Range, CollectRangeStartRefactorings,
+                                 Kinds, {&PrintDiags});
     llvm::outs() << "Action begins\n";
     for (auto Kind : Kinds) {
       llvm::outs() << getDescriptiveRefactoringKindName(Kind) << "\n";

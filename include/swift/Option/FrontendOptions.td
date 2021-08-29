@@ -64,6 +64,10 @@ def emit_fixits_path
   : Separate<["-"], "emit-fixits-path">, MetaVarName<"<path>">,
     HelpText<"Output compiler fixits as source edits to <path>">;
 
+def emit_abi_descriptor_path
+  : Separate<["-"], "emit-abi-descriptor-path">, MetaVarName<"<path>">,
+    HelpText<"Output the ABI descriptor of current module to <path>">;
+
 def serialize_module_interface_dependency_hashes
   : Flag<["-"], "serialize-module-interface-dependency-hashes">,
     Flags<[HelpHidden]>;
@@ -188,6 +192,18 @@ def batch_scan_input_file
 def import_prescan : Flag<["-"], "import-prescan">,
    HelpText<"When performing a dependency scan, only dentify all imports of the main Swift module sources">;
 
+def serialize_dependency_scan_cache : Flag<["-"], "serialize-dependency-scan-cache">,
+   HelpText<"After performing a dependency scan, serialize the scanner's internal state.">;
+
+def reuse_dependency_scan_cache : Flag<["-"], "load-dependency-scan-cache">,
+   HelpText<"After performing a dependency scan, serialize the scanner's internal state.">;
+
+def dependency_scan_cache_path : Separate<["-"], "dependency-scan-cache-path">,
+  HelpText<"The path to output the dependency scanner's internal state.">;
+
+def dependency_scan_cache_remarks : Flag<["-"], "Rdependency-scan-cache">,
+  HelpText<"Emit remarks indicating use of the serialized module dependency scanning cache.">;
+
 def enable_copy_propagation : Flag<["-"], "enable-copy-propagation">,
   HelpText<"Run SIL copy propagation to shorten object lifetime.">;
 def disable_copy_propagation : Flag<["-"], "disable-copy-propagation">,
@@ -285,6 +301,9 @@ def debug_crash_immediately : Flag<["-"], "debug-crash-immediately">,
   DebugCrashOpt, HelpText<"Force a crash immediately">;
 def debug_crash_after_parse : Flag<["-"], "debug-crash-after-parse">,
   DebugCrashOpt, HelpText<"Force a crash after parsing">;
+
+def debug_test_dependency_scan_cache_serialization: Flag<["-"], "test-dependency-scan-cache-serialization">,
+   HelpText<"After performing a dependency scan, serialize and then deserialize the scanner's internal state.">;
 
 def debugger_support : Flag<["-"], "debugger-support">,
   HelpText<"Process swift code as if running in the debugger">;
@@ -420,6 +439,10 @@ def disable_conformance_availability_errors : Flag<["-"],
 def warn_on_potentially_unavailable_enum_case : Flag<["-"],
   "warn-on-potentially-unavailable-enum-case">,
   HelpText<"Downgrade potential unavailability of enum case to a warning">;
+
+def warn_on_editor_placeholder : Flag<["-"],
+  "warn-on-editor-placeholder">,
+  HelpText<"Downgrade the editor placeholder error to a warning">;
 
 def report_errors_to_debugger : Flag<["-"], "report-errors-to-debugger">,
   HelpText<"Deprecated, will be removed in future versions.">;

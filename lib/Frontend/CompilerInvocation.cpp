@@ -426,6 +426,8 @@ static bool ParseLangArgs(LangOptions &Opts, ArgList &Args,
 
   Opts.WarnOnPotentiallyUnavailableEnumCase |=
       Args.hasArg(OPT_warn_on_potentially_unavailable_enum_case);
+  Opts.WarnOnEditorPlaceholder |= Args.hasArg(OPT_warn_on_editor_placeholder);
+
   if (auto A = Args.getLastArg(OPT_enable_access_control,
                                OPT_disable_access_control)) {
     Opts.EnableAccessControl
@@ -2020,31 +2022,4 @@ CompilerInvocation::setUpInputForSILTool(
     getFrontendOptions().InputMode = FrontendOptions::ParseInputMode::SIL;
   }
   return fileBufOrErr;
-}
-
-bool CompilerInvocation::isModuleExternallyConsumed(
-    const ModuleDecl *mod) const {
-  // Modules for executables aren't expected to be consumed by other modules.
-  // This picks up all kinds of entrypoints, including script mode,
-  // @UIApplicationMain and @NSApplicationMain.
-  if (mod->hasEntryPoint()) {
-    return false;
-  }
-
-  // If an implicit Objective-C header was needed to construct this module, it
-  // must be the product of a library target.
-  if (!getFrontendOptions().ImplicitObjCHeaderPath.empty()) {
-    return false;
-  }
-
-  // App extensions are special beasts because they build without entrypoints
-  // like library targets, but they behave like executable targets because
-  // their associated modules are not suitable for distribution.
-  if (mod->getASTContext().LangOpts.EnableAppExtensionRestrictions) {
-    return false;
-  }
-
-  // FIXME: This is still a lousy approximation of whether the module file will
-  // be externally consumed.
-  return true;
 }

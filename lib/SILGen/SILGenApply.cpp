@@ -3875,6 +3875,8 @@ RValue CallEmission::applyNormalCall(SGFContext C) {
   // Get the callee type information.
   auto calleeTypeInfo = callee.getTypeInfo(SGF);
 
+  calleeTypeInfo.origFormalType = origFormalType;
+
   // In C language modes, substitute the type of the AbstractionPattern
   // so that we won't see type parameters down when we try to form bridging
   // conversions.
@@ -3892,6 +3894,8 @@ RValue CallEmission::applyNormalCall(SGFContext C) {
   calleeTypeInfo.substResultType = formalType.getResult();
 
   if (selfArg.hasValue() && callSite.hasValue()) {
+    calleeTypeInfo.origFormalType =
+        calleeTypeInfo.origFormalType->getFunctionResultType();
     calleeTypeInfo.origResultType =
       calleeTypeInfo.origResultType->getFunctionResultType();
     calleeTypeInfo.substResultType =
@@ -4113,7 +4117,7 @@ CallEmission::applySpecializedEmitter(SpecializedEmitter &specializedEmitter,
   // Then finish our value.
   if (resultPlan.hasValue()) {
     return std::move(*resultPlan)
-            ->finish(SGF, loc, formalResultType, directResultsFinal);
+        ->finish(SGF, loc, formalResultType, directResultsFinal, SILValue());
   } else {
     return RValue(
         SGF, *uncurriedLoc, formalResultType, directResultsFinal[0]);
@@ -4168,13 +4172,18 @@ ApplyOptions CallEmission::emitArgumentsForNormalApply(
 
     args.push_back({});
 
-    // Claim the foreign error and/or async argument(s) with the method
-    // formal params.
-    auto siteForeign =
-        CalleeTypeInfo::ForeignInfo{foreign.error, foreign.async, {}};
-    std::move(*callSite).emit(SGF, origFormalType, substFnType, paramLowering,
-                              args.back(), delayedArgs,
-                              siteForeign);
+    if (!foreign.async || (foreign.async && foreign.error)) {
+      // Claim the foreign error argument(s) with the method formal params.
+      auto siteForeignError = CalleeTypeInfo::ForeignInfo{foreign.error, {}, {}};
+      std::move(*callSite).emit(SGF, origFormalType, substFnType, paramLowering,
+                                args.back(), delayedArgs, siteForeignError);
+    }
+    if (foreign.async) {
+      // Claim the foreign async argument(s) with the method formal params.
+      auto siteForeignAsync = CalleeTypeInfo::ForeignInfo{{}, foreign.async, {}};
+      std::move(*callSite).emit(SGF, origFormalType, substFnType, paramLowering,
+                                args.back(), delayedArgs, siteForeignAsync);
+    }
   }
 
   uncurriedLoc = callSite->Loc;
@@ -4382,9 +4391,11 @@ RValue SILGenFunction::emitApply(
     // we left during the first pass.
     auto &completionArgSlot = const_cast<ManagedValue &>(args[completionIndex]);
 
-    completionArgSlot = resultPlan->emitForeignAsyncCompletionHandler(*this, loc);
-
-  } else if (auto foreignError = calleeTypeInfo.foreign.error) {
+    auto origFormalType = *calleeTypeInfo.origFormalType;
+    completionArgSlot = resultPlan->emitForeignAsyncCompletionHandler(
+        *this, origFormalType, loc);
+  }
+  if (auto foreignError = calleeTypeInfo.foreign.error) {
     unsigned errorParamIndex =
         foreignError->getErrorParameterIndex();
 
@@ -4543,13 +4554,15 @@ RValue SILGenFunction::emitApply(
         });
   }
 
+  SILValue bridgedForeignError;
   // If there was a foreign error convention, consider it.
   // TODO: maybe this should happen after managing the result if it's
   // not a result-checking convention?
   if (auto foreignError = calleeTypeInfo.foreign.error) {
     bool doesNotThrow = options.contains(ApplyFlags::DoesNotThrow);
-    emitForeignErrorCheck(loc, directResults, errorTemp, doesNotThrow,
-                          *foreignError);
+    bridgedForeignError =
+        emitForeignErrorCheck(loc, directResults, errorTemp, doesNotThrow,
+                              *foreignError, calleeTypeInfo.foreign.async);
   }
 
   // For objc async calls, push cleanup to be used on throw paths in the result
@@ -4561,8 +4574,8 @@ RValue SILGenFunction::emitApply(
   }
 
   auto directResultsArray = makeArrayRef(directResults);
-  RValue result =
-    resultPlan->finish(*this, loc, substResultType, directResultsArray);
+  RValue result = resultPlan->finish(*this, loc, substResultType,
+                                     directResultsArray, bridgedForeignError);
   assert(directResultsArray.empty() && "didn't claim all direct results");
 
   // For objc async calls, generate cleanup on the resume path here and forward
