@@ -918,7 +918,7 @@ class ModuleInterfaceLoaderImpl {
     // the genericSubInvocation we'll need to use to compute the cache paths.
     ModuleInterfaceBuilder builder(
       ctx.SourceMgr, ctx.Diags, astDelegate, interfacePath, moduleName, cacheDir,
-      prebuiltCacheDir,
+      prebuiltCacheDir, StringRef(),
       Opts.disableInterfaceLock, diagnosticLoc,
       dependencyTracker);
 
@@ -1093,7 +1093,7 @@ bool ModuleInterfaceLoader::buildSwiftModuleFromSwiftInterface(
     const SearchPathOptions &SearchPathOpts, const LangOptions &LangOpts,
     const ClangImporterOptions &ClangOpts, StringRef CacheDir,
     StringRef PrebuiltCacheDir, StringRef ModuleName, StringRef InPath,
-    StringRef OutPath, bool SerializeDependencyHashes,
+    StringRef OutPath, StringRef ABIOutputPath, bool SerializeDependencyHashes,
     bool TrackSystemDependencies, ModuleInterfaceLoaderOptions LoaderOpts,
     RequireOSSAModules_t RequireOSSAModules) {
   InterfaceSubContextDelegateImpl astDelegate(
@@ -1101,7 +1101,7 @@ bool ModuleInterfaceLoader::buildSwiftModuleFromSwiftInterface(
       /*CreateCacheDirIfAbsent*/ true, CacheDir, PrebuiltCacheDir,
       SerializeDependencyHashes, TrackSystemDependencies, RequireOSSAModules);
   ModuleInterfaceBuilder builder(SourceMgr, Diags, astDelegate, InPath,
-                                 ModuleName, CacheDir, PrebuiltCacheDir,
+                                 ModuleName, CacheDir, PrebuiltCacheDir, ABIOutputPath,
                                  LoaderOpts.disableInterfaceLock);
   // FIXME: We really only want to serialize 'important' dependencies here, if
   //        we want to ship the built swiftmodules to another machine.
@@ -1153,6 +1153,13 @@ void InterfaceSubContextDelegateImpl::inheritOptionsForBuildingInterface(
   genericSubInvocation.setImportSearchPaths(SearchPathOpts.ImportSearchPaths);
   genericSubInvocation.setFrameworkSearchPaths(SearchPathOpts.FrameworkSearchPaths);
   if (!SearchPathOpts.SDKPath.empty()) {
+    // Add -sdk arguments to the module building commands.
+    // Module building commands need this because dependencies sometimes use
+    // sdk-relative paths (prebuilt modules for example). Without -sdk, the command
+    // will not be able to local these dependencies, leading to unnecessary
+    // building from textual interfaces.
+    GenericArgs.push_back("-sdk");
+    GenericArgs.push_back(ArgSaver.save(SearchPathOpts.SDKPath));
     genericSubInvocation.setSDKPath(SearchPathOpts.SDKPath);
   }
 

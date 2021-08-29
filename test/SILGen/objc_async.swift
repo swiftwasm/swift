@@ -76,6 +76,19 @@ func testSlowServer(slowServer: SlowServer) async throws {
   let _: NSObject? = try await slowServer.stopRecording()
   let _: NSObject = try await slowServer.someObject()
 
+  let _: () -> Void = await slowServer.performVoid2Void()
+  let _: (Any) -> Void = await slowServer.performId2Void()
+  let _: (Any) -> Any = await slowServer.performId2Id()
+  let _: (String) -> String = await slowServer.performNSString2NSString()
+
+  let _: ((String) -> String, String) = await slowServer.performNSString2NSStringNSString()
+  let _: ((Any) -> Void, (Any) -> Void) = await slowServer.performId2VoidId2Void()
+
+  let _: String = try await slowServer.findAnswerFailingly()
+
+  let _: () -> Void = try await slowServer.obtainClosure()
+
+  let _: Flavor = try await slowServer.iceCreamFlavor()
 }
 
 func testGeneric<T: AnyObject>(x: GenericObject<T>) async throws {
