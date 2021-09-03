@@ -78,7 +78,13 @@ jobs:
           path: swift
           fetch-depth: 0
 
+      - name: Install Homebrew
+        if: ${{ matrix.build_os == 'macos-10.15' || matrix.build_os == 'macos-11' }}
+        run: |
+          /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+
       - name: Install Cmake
+        if: ${{ matrix.build_os == 'macos-10.15' || matrix.build_os == 'macos-11' }}
         run: brew install cmake
 
       - name: Prepare sccache timestamp
