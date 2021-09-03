@@ -78,14 +78,10 @@ jobs:
           path: swift
           fetch-depth: 0
 
-      - name: List Homebrew
-        if: ${{ matrix.build_os == 'macos-10.15' || matrix.build_os == 'macos-11' }}
+      - name: Add Homebrew to Path
+        if: ${{ matrix.target == 'macos_arm64' }}
         run: |
-          ls /opt/homebrew/bin
-
-      - name: Install Cmake
-        if: ${{ matrix.build_os == 'macos-10.15' || matrix.build_os == 'macos-11' }}
-        run: brew install cmake
+          echo "/opt/homebrew/bin" >> $GITHUB_PATH
 
       - name: Prepare sccache timestamp
         id: cache_timestamp
