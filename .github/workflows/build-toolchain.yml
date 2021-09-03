@@ -79,17 +79,17 @@ jobs:
           path: swift
           fetch-depth: 0
 
-      - name: Install cmake
-        if: ${{ matrix.build_os == 'macos-11' }}
-        run: |
-          brew install cmake
-
       - name: Prepare sccache timestamp
         id: cache_timestamp
         shell: cmake -P {0}
         run: |
           string(TIMESTAMP current_date "%Y-%m-%d-%H;%M;%S" UTC)
           message("::set-output name=timestamp::${current_date}")
+
+      - name: Check Xcode version
+        if: ${{ startsWith(matrix.build_os, 'macos-') }}
+        run: |
+          xcodebuild -version
 
       - uses: actions/cache@v1
         with:
