@@ -79,11 +79,6 @@ jobs:
           path: swift
           fetch-depth: 0
 
-      - name: Add Homebrew to Path
-        if: ${{ matrix.target == 'macos_arm64' }}
-        run: |
-          echo "/opt/homebrew/bin" >> $GITHUB_PATH
-
       - name: Prepare sccache timestamp
         id: cache_timestamp
         shell: cmake -P {0}
