@@ -79,6 +79,11 @@ jobs:
           path: swift
           fetch-depth: 0
 
+      - name: Install cmake
+        if: ${{ matrix.build_os == 'macos-11' }}
+        run: |
+          brew install cmake
+
       - name: Prepare sccache timestamp
         id: cache_timestamp
         shell: cmake -P {0}
