@@ -78,6 +78,9 @@ jobs:
           path: swift
           fetch-depth: 0
 
+      - name: Install Cmake
+        run: brew install cmake
+
       - name: Prepare sccache timestamp
         id: cache_timestamp
         shell: cmake -P {0}
