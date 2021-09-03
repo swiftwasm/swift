@@ -21,26 +21,36 @@ jobs:
       matrix:
         include:
           - build_os: ubuntu-18.04
+            agent_query: ubuntu-18.04
             target: ubuntu18.04_x86_64
             run_full_test: false
             run_e2e_test: true
             build_hello_wasm: true
 
           - build_os: ubuntu-20.04
+            agent_query: ubuntu-20.04
             target: ubuntu20.04_x86_64
             run_full_test: false
             run_e2e_test: true
             build_hello_wasm: true
 
-          - build_os: macos-10.15
+          - build_os: macos-11
+            agent_query: macos-11
             target: macos_x86_64
+            run_full_test: true
+            run_e2e_test: true
+            build_hello_wasm: true
+
+          - build_os: macos-11
+            agent_query: [self-hosted, macOS, ARM64]
+            target: macos_arm64
             run_full_test: true
             run_e2e_test: true
             build_hello_wasm: true
 
     name: Target ${{ matrix.target }}
     timeout-minutes: 0
-    runs-on: ${{ matrix.build_os }}
+    runs-on: ${{ matrix.agent_query }}
     steps:
       # TODO(katei): Remove this step after https://bugs.swift.org/browse/SR-15135 will be resolved
       - name: (Workaround) Uninstall pre-installed Swift toolchain on Linux
@@ -83,9 +93,9 @@ jobs:
             ${{ matrix.target }}-sccache-v10-
 
       - name: Select Xcode version
-        if: ${{ matrix.build_os == 'macos-10.15' }}
+        if: ${{ matrix.build_os == 'macos-10.15' || matrix.build_os == 'macos-11' }}
         run: |
-          sudo xcode-select --switch /Applications/Xcode_12.3.app/Contents/Developer/
+          sudo xcode-select --switch /Applications/Xcode_12.5.app/Contents/Developer/
           xcodebuild -version
 
       - name: Build ${{ matrix.target }} installable archive
@@ -94,7 +104,7 @@ jobs:
         run: |
 
           case "${{ matrix.target }}" in
-            "ubuntu20.04_x86_64" | "ubuntu18.04_x86_64" | "macos_x86_64")
+            "ubuntu20.04_x86_64" | "ubuntu18.04_x86_64" | "macos_x86_64" | "macos_arm64")
               ./swift/utils/webassembly/ci.sh
             ;;
             *)
@@ -153,4 +163,3 @@ jobs:
         run: |
           $TOOLCHAIN/usr/bin/swift run # Use TOOLCHAIN env value
         working-directory: ${{ github.workspace }}/integration-tests
-
