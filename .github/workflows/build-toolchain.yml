@@ -98,7 +98,7 @@ jobs:
             ${{ matrix.target }}-sccache-v10-
 
       - name: Select Xcode version
-        if: ${{ matrix.build_os == 'macos-10.15' || matrix.build_os == 'macos-11' }}
+        if: ${{ matrix.target == 'macos_x86_64' }}
         run: |
           sudo xcode-select --switch /Applications/Xcode_12.5.app/Contents/Developer/
           xcodebuild -version
