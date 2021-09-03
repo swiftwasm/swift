@@ -78,10 +78,10 @@ jobs:
           path: swift
           fetch-depth: 0
 
-      - name: Install Homebrew
+      - name: List Homebrew
         if: ${{ matrix.build_os == 'macos-10.15' || matrix.build_os == 'macos-11' }}
         run: |
-          /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+          ls /opt/homebrew/bin
 
       - name: Install Cmake
         if: ${{ matrix.build_os == 'macos-10.15' || matrix.build_os == 'macos-11' }}
