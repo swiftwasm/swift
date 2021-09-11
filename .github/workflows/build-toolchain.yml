@@ -24,6 +24,7 @@ jobs:
           - build_os: ubuntu-18.04
             agent_query: ubuntu-18.04
             target: ubuntu18.04_x86_64
+            run_stdlib_test: false
             run_full_test: false
             run_e2e_test: true
             build_hello_wasm: true
@@ -32,6 +33,7 @@ jobs:
           - build_os: ubuntu-20.04
             agent_query: ubuntu-20.04
             target: ubuntu20.04_x86_64
+            run_stdlib_test: false
             run_full_test: false
             run_e2e_test: true
             build_hello_wasm: true
@@ -40,6 +42,7 @@ jobs:
           - build_os: macos-11
             agent_query: macos-11
             target: macos_x86_64
+            run_stdlib_test: true
             run_full_test: true
             run_e2e_test: true
             build_hello_wasm: true
@@ -48,8 +51,12 @@ jobs:
           - build_os: macos-11
             agent_query: [self-hosted, macOS, ARM64]
             target: macos_arm64
-            run_full_test: true
-            run_e2e_test: true
+            # FIXME: Enable stdlib test after wasmer fixes singlepass bug on arm64,
+            # fixes cranelift bug on x64, or wasmtime supports arm64
+            # Currently it's hard to run tests on both x64 and arm64.
+            run_stdlib_test: false
+            run_full_test: false
+            run_e2e_test: false
             build_hello_wasm: true
             clean_build_dir: true
 
@@ -130,6 +137,23 @@ jobs:
         with:
           name: ${{ matrix.target }}-installable
           path: swift-wasm-${{ env.TOOLCHAIN_CHANNEL }}-SNAPSHOT-${{ matrix.target }}.tar.gz
+
+      - name: Add wasmer in PATH for testing
+        run: echo "$HOME/.wasmer/bin" >> $GITHUB_PATH
+
+      - name: Run stdlib tests for wasi-wasm32
+        if: ${{ matrix.run_stdlib_test }}
+        run: |
+          TARGET_STDLIB_BUILD_DIR=${{ github.workspace }}/target-build/swift-stdlib-wasi-wasm32
+          ./swift/utils/run-test --build-dir "$TARGET_STDLIB_BUILD_DIR" --target wasi-wasm32 \
+            "$TARGET_STDLIB_BUILD_DIR/test-wasi-wasm32/stdlib"
+
+      - name: Run all tests for wasi-wasm32
+        if: ${{ matrix.run_full_test }}
+        run: |
+          TARGET_STDLIB_BUILD_DIR=${{ github.workspace }}/target-build/swift-stdlib-wasi-wasm32
+          # Run all tests but ignore failure temporarily
+          ninja check-swift-wasi-wasm32 -C "$TARGET_STDLIB_BUILD_DIR" || true
 
       - name: Pack test results
         if: ${{ matrix.run_full_test }}
