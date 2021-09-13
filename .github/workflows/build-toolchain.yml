@@ -93,7 +93,7 @@ jobs:
           xcodebuild -version
 
       - name: Add SwiftPM remote
-        if: ${{ matrix.target == "macos_arm64" }}
+        if: ${{ matrix.target == 'macos_arm64' }}
         run: |
           cd ../swiftpm
           git remote add swiftwasm https://github.com/swiftwasm/swift-package-manager.git
