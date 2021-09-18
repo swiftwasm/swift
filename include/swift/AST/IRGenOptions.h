@@ -81,6 +81,12 @@ enum class IRGenEmbedMode : unsigned {
   EmbedBitcode
 };
 
+enum class SwiftAsyncFramePointerKind : unsigned {
+   Auto, // Choose Swift async extended frame info based on deployment target.
+   Always, // Unconditionally emit Swift async extended frame info.
+   Never,  // Don't emit Swift async extended frame info.
+};
+
 using clang::PointerAuthSchema;
 
 struct PointerAuthOptions : clang::PointerAuthOptions {
@@ -285,6 +291,8 @@ public:
 
   IRGenLLVMLTOKind LLVMLTOKind : 2;
 
+  SwiftAsyncFramePointerKind SwiftAsyncFramePointer : 2;
+
   /// Add names to LLVM values.
   unsigned HasValueNamesSetting : 1;
   unsigned ValueNames : 1;
@@ -394,7 +402,9 @@ public:
         EmitStackPromotionChecks(false), FunctionSections(false),
         DisableAutolinkStdlib(false),
         PrintInlineTree(false), EmbedMode(IRGenEmbedMode::None),
-        LLVMLTOKind(IRGenLLVMLTOKind::None), HasValueNamesSetting(false),
+        LLVMLTOKind(IRGenLLVMLTOKind::None),
+        SwiftAsyncFramePointer(SwiftAsyncFramePointerKind::Always),
+        HasValueNamesSetting(false),
         ValueNames(false), EnableReflectionMetadata(true),
         EnableReflectionNames(true), EnableAnonymousContextMangledNames(false),
         ForcePublicLinkage(false), LazyInitializeClassMetadata(false),
