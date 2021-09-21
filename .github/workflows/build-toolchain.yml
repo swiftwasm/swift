@@ -115,7 +115,8 @@ jobs:
           rm -rf ${{ github.workspace }}/target-build \
             ${{ github.workspace }}/host-build \
             ${{ github.workspace }}/host-toolchain-sdk \
-            ${{ github.workspace }}/dist-toolchain-sdk
+            ${{ github.workspace }}/dist-toolchain-sdk \
+                        ${{ github.workspace }}/swift-corelibs-libdispatch
 
       - name: Build ${{ matrix.target }} installable archive
         env:
