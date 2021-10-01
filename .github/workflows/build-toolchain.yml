@@ -31,32 +31,32 @@ jobs:
           - build_os: ubuntu-20.04
             agent_query: ubuntu-20.04
             target: ubuntu20.04_x86_64
-            run_stdlib_test: false
-            run_full_test: false
-            run_e2e_test: true
-            build_hello_wasm: true
-            clean_build_dir: false
-
-          - build_os: macos-11
-            agent_query: macos-11
-            target: macos_x86_64
             run_stdlib_test: true
-            run_full_test: true
+            run_full_test: false
             run_e2e_test: true
             build_hello_wasm: true
             clean_build_dir: false
 
-          - build_os: macos-11
-            agent_query: [self-hosted, macOS, ARM64]
-            target: macos_arm64
-            # FIXME: Enable stdlib test after wasmer fixes singlepass bug on arm64,
-            # fixes cranelift bug on x64, or wasmtime supports arm64
-            # Currently it's hard to run tests on both x64 and arm64.
-            run_stdlib_test: false
-            run_full_test: false
-            run_e2e_test: false
-            build_hello_wasm: true
-            clean_build_dir: true
+#          - build_os: macos-11
+#            agent_query: macos-11
+#            target: macos_x86_64
+#            run_stdlib_test: true
+#            run_full_test: true
+#            run_e2e_test: true
+#            build_hello_wasm: true
+#            clean_build_dir: false
+#
+#          - build_os: macos-11
+#            agent_query: [self-hosted, macOS, ARM64]
+#            target: macos_arm64
+#            # FIXME: Enable stdlib test after wasmer fixes singlepass bug on arm64,
+#            # fixes cranelift bug on x64, or wasmtime supports arm64
+#            # Currently it's hard to run tests on both x64 and arm64.
+#            run_stdlib_test: false
+#            run_full_test: false
+#            run_e2e_test: false
+#            build_hello_wasm: true
+#            clean_build_dir: true
 
     name: Target ${{ matrix.target }}
     timeout-minutes: 0
