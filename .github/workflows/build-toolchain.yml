@@ -101,6 +101,11 @@ jobs:
         if: ${{ startsWith(matrix.build_os, 'macos-') }}
         run: |
           xcodebuild -version
+          
+      - name: LLVM cleanup
+        if: ${{ startsWith(matrix.target, 'macos_arm64') }}
+        run: |
+          rm -rf ${{ github.workspace }}/llvm-project
 
       - uses: actions/cache@v1
         with:
