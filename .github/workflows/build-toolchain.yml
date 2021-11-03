@@ -100,7 +100,6 @@ jobs:
       - name: Check Xcode version
         if: ${{ startsWith(matrix.build_os, 'macos-') }}
         run: |
-          rm -rf llvm-project
           xcodebuild -version
 
       - uses: actions/cache@v1
