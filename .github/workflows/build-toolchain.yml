@@ -100,7 +100,6 @@ jobs:
       - name: Check Xcode version
         if: ${{ startsWith(matrix.build_os, 'macos-') }}
         run: |
-          cd llvm-project && git remote rm swiftwasm && git remote add swiftwasm https://github.com/swiftwasm/llvm-project.git && git fetch swiftwasm
           xcodebuild -version
 
       - uses: actions/cache@v1
