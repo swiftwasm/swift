@@ -43,7 +43,7 @@ jobs:
 
           - build_os: ubuntu-20.04
             agent_query: [ubuntu20.04, ARM64]
-            target: ubuntu20.04_arm64
+            target: ubuntu20.04_aarch64
             run_stdlib_test: false
             run_full_test: false
             run_e2e_test: false
