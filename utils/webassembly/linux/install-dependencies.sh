@@ -3,34 +3,35 @@
 set -ex
 
 if [[ "$(cat /etc/system-release)" == *"Amazon Linux release 2"* ]]; then
-  sudo yum -y install \
-    clang            \
-    cmake            \
-    curl-devel       \
-    gcc-c++          \
-    git              \
-    glibc-static     \
-    libbsd-devel     \
-    libedit-devel    \
-    libicu-devel     \
-    libuuid-devel    \
-    libxml2-devel    \
-    ncurses-devel    \
-    ninja-build      \
-    pexpect          \
-    pkgconfig        \
-    procps-ng        \
-    python           \
-    python-devel     \
-    python-pkgconfig \
-    python-six       \
-    python3-devel    \
-    rsync            \
-    sqlite-devel     \
-    swig             \
-    tzdata           \
-    uuid-devel       \
-    wget             \
+  sudo yum -y install   \
+    clang               \
+    cmake               \
+    curl-devel          \
+    gcc-c++             \
+    git                 \
+    glibc-static        \
+    libbsd-devel        \
+    libedit-devel       \
+    libicu-devel        \
+    libuuid-devel       \
+    libxml2-devel       \
+    ncurses-compat-libs \
+    ncurses-devel       \
+    ninja-build         \
+    pexpect             \
+    pkgconfig           \
+    procps-ng           \
+    python              \
+    python-devel        \
+    python-pkgconfig    \
+    python-six          \
+    python3-devel       \
+    rsync               \
+    sqlite-devel        \
+    swig                \
+    tzdata              \
+    uuid-devel          \
+    wget                \
     which
 
   if [ ! -e /usr/local/bin/ninja ]; then
