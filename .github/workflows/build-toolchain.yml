@@ -23,6 +23,15 @@ jobs:
     strategy:
       matrix:
         include:
+          - build_os: amazon-linux-2
+            agent_query: [AmazonLinux2, X64]
+            target: amazonlinux2_x86_64
+            run_stdlib_test: true
+            run_full_test: false
+            run_e2e_test: true
+            build_hello_wasm: true
+            clean_build_dir: false
+
           - build_os: ubuntu-18.04
             agent_query: ubuntu-18.04
             target: ubuntu18.04_x86_64
@@ -125,7 +134,7 @@ jobs:
         run: |
 
           case "${{ matrix.target }}" in
-            "ubuntu20.04_x86_64" | "ubuntu18.04_x86_64" | "macos_x86_64" | "macos_arm64")
+            "amazonlinux2_x86_64" | "ubuntu20.04_x86_64" | "ubuntu18.04_x86_64" | "macos_x86_64" | "macos_arm64")
               ./swift/utils/webassembly/ci.sh
             ;;
             *)
