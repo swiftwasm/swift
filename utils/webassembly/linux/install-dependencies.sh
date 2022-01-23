@@ -5,7 +5,6 @@ set -ex
 if [[ "$(cat /etc/system-release)" == *"Amazon Linux release 2"* ]]; then
   sudo yum -y install   \
     clang               \
-    cmake               \
     curl-devel          \
     gcc-c++             \
     git                 \
