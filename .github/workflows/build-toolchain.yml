@@ -84,7 +84,7 @@ jobs:
           rm -rf /usr/share/swift/
 
       - name: Free disk space
-        if: ${{ (matrix.build_os == 'ubuntu-20.04' || matrix.build_os == 'ubuntu-18.04') && !endsWith(matrix.target, 'arm64') }}
+        if: ${{ (matrix.build_os == 'ubuntu-20.04' || matrix.build_os == 'ubuntu-18.04') && !endsWith(matrix.target, 'aarch64') }}
         run: |
           df -h
           sudo apt-get purge libgcc-9-dev gcc-9 libstdc++-9-dev libgcc-10-dev gcc-10 libstdc++-10-dev clang-6.0 llvm-6.0
@@ -134,7 +134,7 @@ jobs:
         run: |
 
           case "${{ matrix.target }}" in
-            "ubuntu20.04_x86_64" | "ubuntu18.04_x86_64" | "ubuntu20.04_arm64" | "macos_x86_64" | "macos_arm64")
+            "ubuntu20.04_x86_64" | "ubuntu18.04_x86_64" | "ubuntu20.04_aarch64" | "macos_x86_64" | "macos_arm64")
               ./swift/utils/webassembly/ci.sh
             ;;
             *)
