@@ -33,7 +33,9 @@ if [[ "$(cat /etc/system-release)" == *"Amazon Linux release 2"* ]]; then
     wget             \
     which
 
-  sudo ln -s /usr/bin/ninja-build /usr/local/bin/ninja
+  if [ ! -e /usr/local/bin/ninja ]; then
+    sudo ln -s /usr/bin/ninja-build /usr/local/bin/ninja
+  fi
 else
   sudo apt update
 
