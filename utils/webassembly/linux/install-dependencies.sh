@@ -35,9 +35,11 @@ cd $SWIFT_PATH
 ./utils/update-checkout --clone --scheme wasm --skip-repository swift
 
 # Install wasmer
-
-if [ ! -e ~/.wasmer/bin/wasmer ]; then
-  curl https://get.wasmer.io -sSfL | sh
+# FIXME: Wasmer doesn't support linux-aarch64, consider using a different WASI-compatible runtime.
+if [ "$(uname -m)" == "aarch64" ]; then
+  if [ ! -e ~/.wasmer/bin/wasmer ]; then
+    curl https://get.wasmer.io -sSfL | sh
+  fi
 fi
 
 cd $SOURCE_PATH
