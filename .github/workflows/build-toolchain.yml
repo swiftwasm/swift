@@ -48,7 +48,7 @@ jobs:
             run_full_test: false
             run_e2e_test: false
             build_hello_wasm: true
-            clean_build_dir: false
+            clean_build_dir: true
 
           - build_os: macos-11
             agent_query: macos-11
