@@ -30,7 +30,7 @@ jobs:
             run_full_test: false
             run_e2e_test: true
             build_hello_wasm: true
-            clean_build_dir: false
+            clean_build_dir: true
 
           - build_os: ubuntu-18.04
             agent_query: ubuntu-18.04
