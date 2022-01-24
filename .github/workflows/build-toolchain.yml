@@ -26,7 +26,7 @@ jobs:
           - build_os: amazon-linux-2
             agent_query: [AmazonLinux2, X64]
             target: amazonlinux2_x86_64
-            run_stdlib_test: true
+            run_stdlib_test: false
             run_full_test: false
             run_e2e_test: true
             build_hello_wasm: true
