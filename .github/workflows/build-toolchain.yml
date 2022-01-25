@@ -48,7 +48,7 @@ jobs:
             run_full_test: false
             run_e2e_test: false
             build_hello_wasm: true
-            clean_build_dir: false
+            clean_build_dir: true
 
           - build_os: macos-11
             agent_query: macos-11
@@ -84,7 +84,7 @@ jobs:
           rm -rf /usr/share/swift/
 
       - name: Free disk space
-        if: ${{ (matrix.build_os == 'ubuntu-20.04' || matrix.build_os == 'ubuntu-18.04') && !endsWith(matrix.target, 'aarch64') }}
+        if: ${{ (matrix.build_os == 'ubuntu-20.04' || matrix.build_os == 'ubuntu-18.04') && matrix.agent_query == null }}
         run: |
           df -h
           sudo apt-get purge libgcc-9-dev gcc-9 libstdc++-9-dev libgcc-10-dev gcc-10 libstdc++-10-dev clang-6.0 llvm-6.0
