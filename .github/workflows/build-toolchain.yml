@@ -132,6 +132,7 @@ jobs:
       - name: Clean stdlib build directory
         if: ${{ matrix.clean_build_dir }}
         run: |
+          cd /Users/gha-runner/actions-runner/_work/swift/swift/swift-experimental-string-processing && git tag -d dev/7
           rm -rf ${{ github.workspace }}/target-build \
             ${{ github.workspace }}/host-build \
             ${{ github.workspace }}/host-toolchain-sdk \
