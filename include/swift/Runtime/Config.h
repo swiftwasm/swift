@@ -248,6 +248,12 @@ extern uintptr_t __COMPATIBILITY_LIBRARIES_CANNOT_CHECK_THE_IS_SWIFT_BIT_DIRECTL
 #define SWIFT_VFORMAT(fmt)
 #endif
 
+// When target is harvard architecture, relative function pointer should
+// always be indirect to avoid cross address-space relative pointer.
+#ifndef SWIFT_INDIRECT_RELATIVE_FUNCTION_POINTER
+#define SWIFT_INDIRECT_RELATIVE_FUNCTION_POINTER 0
+#endif
+
 // Pointer authentication.
 #if __has_feature(ptrauth_calls)
 #define SWIFT_PTRAUTH 1

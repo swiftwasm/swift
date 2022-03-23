@@ -2767,8 +2767,14 @@ static void initClassVTable(ClassMetadata *self) {
     auto descriptors = description->getMethodDescriptors();
     for (unsigned i = 0, e = vtable->VTableSize; i < e; ++i) {
       auto &methodDescription = descriptors[i];
+      auto *ptr = methodDescription.Impl.get();
+#if SWIFT_INDIRECT_RELATIVE_FUNCTION_POINTER
+      if (!methodDescription.Flags.isAsync()) {
+        ptr = *reinterpret_cast<void **>(ptr);
+      }
+#endif
       swift_ptrauth_init_code_or_data(
-          &classWords[vtableOffset + i], methodDescription.Impl.get(),
+          &classWords[vtableOffset + i], ptr,
           methodDescription.Flags.getExtraDiscriminator(),
           !methodDescription.Flags.isAsync());
     }
@@ -2808,9 +2814,14 @@ static void initClassVTable(ClassMetadata *self) {
       auto baseVTable = baseClass->getVTableDescriptor();
       auto offset = (baseVTable->getVTableOffset(baseClass) +
                      (baseMethod - baseClassMethods.data()));
-
+      void *impl = descriptor.Impl.get();
+#if SWIFT_INDIRECT_RELATIVE_FUNCTION_POINTER
+      if (!baseMethod->Flags.isAsync()) {
+        impl = *reinterpret_cast<void **>(impl);
+      }
+#endif
       swift_ptrauth_init_code_or_data(&classWords[offset],
-                                      descriptor.Impl.get(),
+                                      impl,
                                       baseMethod->Flags.getExtraDiscriminator(),
                                       !baseMethod->Flags.isAsync());
     }
@@ -4757,6 +4768,35 @@ static void initAssociatedConformanceProtocolWitness(void **slot, void *witness,
 /// in a slot in the witness table we're building.
 static void initProtocolWitness(void **slot, void *witness,
                                 const ProtocolRequirement &reqt) {
+#if SWIFT_INDIRECT_RELATIVE_FUNCTION_POINTER
+  bool isRelativeFunctionPointer;
+  switch (reqt.Flags.getKind()) {
+  case ProtocolRequirementFlags::Kind::BaseProtocol: {
+    isRelativeFunctionPointer = false;
+    break;
+  }
+  case ProtocolRequirementFlags::Kind::Method:
+  case ProtocolRequirementFlags::Kind::Init:
+  case ProtocolRequirementFlags::Kind::Getter:
+  case ProtocolRequirementFlags::Kind::Setter:
+  case ProtocolRequirementFlags::Kind::ReadCoroutine:
+  case ProtocolRequirementFlags::Kind::ModifyCoroutine: {
+    isRelativeFunctionPointer = !reqt.Flags.isAsync();
+    break;
+  }
+  case ProtocolRequirementFlags::Kind::AssociatedConformanceAccessFunction:
+  case ProtocolRequirementFlags::Kind::AssociatedTypeAccessFunction: {
+    // now that it no longer stores a function pointer.
+    isRelativeFunctionPointer = false;
+    break;
+  }
+  default:
+    swift_unreachable("bad witness kind");
+  }
+  if (isRelativeFunctionPointer) {
+    witness = *reinterpret_cast<void **>(witness);
+  }
+#endif
 #if SWIFT_PTRAUTH
   switch (reqt.Flags.getKind()) {
   // Base protocols use no signing at all right now.
@@ -5353,6 +5393,9 @@ static const WitnessTable *swift_getAssociatedConformanceWitnessSlowImpl(
     int32_t offset;
     memcpy(&offset, mangledName.data() + 1, 4);
     uintptr_t ptr = detail::applyRelativeOffset(mangledName.data() + 1, offset);
+#if SWIFT_INDIRECT_RELATIVE_FUNCTION_POINTER
+    ptr = *reinterpret_cast<uintptr_t *>(ptr);
+#endif
 
     // Call the witness function.
     AssociatedWitnessTableAccessFunction *witnessFn;

@@ -73,6 +73,10 @@ option(SWIFT_STDLIB_STABLE_ABI
        "Should stdlib be built with stable ABI (library evolution, resilience)."
        "${SWIFT_STDLIB_STABLE_ABI_default}")
 
+option(SWIFT_STDLIB_INDIRECT_RELATIVE_FUNCTION_POINTER
+       "Force function relative pointer to always be indirect"
+       FALSE)
+
 option(SWIFT_ENABLE_MODULE_INTERFACES
        "Generate .swiftinterface files alongside .swiftmodule files"
        "${SWIFT_STDLIB_STABLE_ABI}")

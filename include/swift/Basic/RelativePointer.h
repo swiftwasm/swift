@@ -386,6 +386,11 @@ public:
 /// position-independent constant data.
 template<typename T, bool Nullable, typename Offset>
 class RelativeDirectPointerImpl {
+#if SWIFT_INDIRECT_RELATIVE_FUNCTION_POINTER
+  static_assert(!std::is_function<T>::value,
+                "relative function pointer should always be indirect on "
+                "harvard architecture");
+#endif
 private:
   /// The relative offset of the function's entry point from *this.
   Offset RelativeOffset;
