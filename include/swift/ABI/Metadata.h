@@ -1871,10 +1871,13 @@ struct TargetGenericWitnessTable {
   uint16_t WitnessTablePrivateSizeInWordsAndRequiresInstantiation;
 
   /// The instantiation function, which is called after the template is copied.
-  RelativeDirectPointer<void(TargetWitnessTable<Runtime> *instantiatedTable,
-                             const TargetMetadata<Runtime> *type,
-                             const void * const *instantiationArgs),
-                        /*nullable*/ true> Instantiator;
+  TargetRelativeFunctionPointer<
+      Runtime,
+      void(TargetWitnessTable<Runtime> *instantiatedTable,
+           const TargetMetadata<Runtime> *type,
+           const void *const *instantiationArgs),
+      /*nullable*/ true>
+      Instantiator;
 
   using PrivateDataType = void *[swift::NumGenericMetadataPrivateDataWords];
 
@@ -2606,12 +2609,12 @@ using MetadataCompleter =
 template <typename Runtime>
 struct TargetGenericMetadataPattern {
   /// The function to call to instantiate the template.
-  TargetRelativeDirectPointer<Runtime, MetadataInstantiator>
+  TargetRelativeFunctionPointer<Runtime, MetadataInstantiator>
     InstantiationFunction;
 
   /// The function to call to complete the instantiation.  If this is null,
   /// the instantiation function must always generate complete metadata.
-  TargetRelativeDirectPointer<Runtime, MetadataCompleter, /*nullable*/ true>
+  TargetRelativeFunctionPointer<Runtime, MetadataCompleter, /*nullable*/ true>
     CompletionFunction;
 
   /// Flags describing the layout of this instantiation pattern.
@@ -2718,10 +2721,10 @@ struct TargetGenericClassMetadataPattern final :
   using TargetGenericMetadataPattern<Runtime>::PatternFlags;
 
   /// The heap-destructor function.
-  TargetRelativeDirectPointer<Runtime, HeapObjectDestroyer> Destroy;
+  TargetRelativeFunctionPointer<Runtime, HeapObjectDestroyer> Destroy;
 
   /// The ivar-destructor function.
-  TargetRelativeDirectPointer<Runtime, ClassIVarDestroyer, /*nullable*/ true>
+  TargetRelativeFunctionPointer<Runtime, ClassIVarDestroyer, /*nullable*/ true>
     IVarDestroyer;
 
   /// The class flags.
@@ -2922,7 +2925,7 @@ private:
 template <typename Runtime>
 struct TargetForeignMetadataInitialization {
   /// The completion function.  The pattern will always be null.
-  TargetRelativeDirectPointer<Runtime, MetadataCompleter, /*nullable*/ true>
+  TargetRelativeFunctionPointer<Runtime, MetadataCompleter, /*nullable*/ true>
     CompletionFunction;
 };
 
@@ -2967,14 +2970,14 @@ struct TargetResilientClassMetadataPattern {
   ///
   /// If this is null, the runtime instead calls swift_relocateClassMetadata(),
   /// passing in the class descriptor and this pattern.
-  TargetRelativeDirectPointer<Runtime, MetadataRelocator, /*nullable*/ true>
+  TargetRelativeFunctionPointer<Runtime, MetadataRelocator, /*nullable*/ true>
     RelocationFunction;
 
   /// The heap-destructor function.
-  TargetRelativeDirectPointer<Runtime, HeapObjectDestroyer> Destroy;
+  TargetRelativeFunctionPointer<Runtime, HeapObjectDestroyer> Destroy;
 
   /// The ivar-destructor function.
-  TargetRelativeDirectPointer<Runtime, ClassIVarDestroyer, /*nullable*/ true>
+  TargetRelativeFunctionPointer<Runtime, ClassIVarDestroyer, /*nullable*/ true>
     IVarDestroyer;
 
   /// The class flags.
@@ -3018,7 +3021,7 @@ struct TargetSingletonMetadataInitialization {
 
   /// The completion function.  The pattern will always be null, even
   /// for a resilient class.
-  TargetRelativeDirectPointer<Runtime, MetadataCompleter>
+  TargetRelativeFunctionPointer<Runtime, MetadataCompleter>
     CompletionFunction;
 
   bool hasResilientClassPattern(
@@ -3047,7 +3050,7 @@ struct TargetCanonicalSpecializedMetadatasListEntry {
 
 template <typename Runtime>
 struct TargetCanonicalSpecializedMetadataAccessorsListEntry {
-  TargetRelativeDirectPointer<Runtime, MetadataResponse(MetadataRequest), /*Nullable*/ false> accessor;
+  TargetRelativeFunctionPointer<Runtime, MetadataResponse(MetadataRequest), /*Nullable*/ false> accessor;
 };
 
 template <typename Runtime>
@@ -3067,7 +3070,7 @@ public:
   /// The function type here is a stand-in. You should use getAccessFunction()
   /// to wrap the function pointer in an accessor that uses the proper calling
   /// convention for a given number of arguments.
-  TargetRelativeDirectPointer<Runtime, MetadataResponse(...),
+  TargetRelativeFunctionPointer<Runtime, MetadataResponse(...),
                               /*Nullable*/ true> AccessFunctionPtr;
   
   /// A pointer to the field descriptor for the type, if any.
@@ -3332,7 +3335,7 @@ public:
   using MetadataListEntry = 
     TargetCanonicalSpecializedMetadatasListEntry<Runtime>;
   using MetadataAccessor = 
-    TargetRelativeDirectPointer<Runtime, MetadataResponse(MetadataRequest), /*Nullable*/ false>;
+    TargetRelativeFunctionPointer<Runtime, MetadataResponse(MetadataRequest), /*Nullable*/ false>;
   using MetadataAccessorListEntry =
       TargetCanonicalSpecializedMetadataAccessorsListEntry<Runtime>;
   using MetadataCachingOnceToken =

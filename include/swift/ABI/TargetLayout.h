@@ -100,6 +100,16 @@ struct InProcess {
 
   template <typename T, bool Nullable = true>
   using RelativeDirectPointer = RelativeDirectPointer<T, Nullable>;
+
+  template <typename T, bool Nullable = true, typename Offset = int32_t>
+#if SWIFT_INDIRECT_RELATIVE_FUNCTION_POINTER
+  // Code section symbol cannot be directly relative in harvard architectures
+  using RelativeFunctionPointer =
+      swift::RelativeIndirectPointer<T, Nullable, Offset>;
+#else
+  using RelativeFunctionPointer =
+      swift::RelativeDirectPointer<T, Nullable, Offset>;
+#endif
 };
 
 /// Represents a pointer in another address space.
@@ -157,6 +167,9 @@ struct External {
 
   template <typename T, bool Nullable = true>
   using RelativeDirectPointer = int32_t;
+
+  template <typename T, bool Nullable = true, typename Offset = int32_t>
+  using RelativeFunctionPointer = int32_t;
 };
 
 template <typename Runtime, typename T>
@@ -181,6 +194,16 @@ using TargetRelativeDirectPointer
 template <typename Runtime, typename Pointee, bool Nullable = true>
 using TargetRelativeIndirectablePointer
   = typename Runtime::template RelativeIndirectablePointer<Pointee,Nullable>;
+
+template <typename Runtime, typename Pointee, bool Nullable = true,
+          typename Offset = int32_t>
+using TargetRelativeFunctionPointer =
+    typename Runtime::template RelativeFunctionPointer<Pointee, Nullable,
+                                                       Offset>;
+
+template <typename Pointee, bool Nullable = true, typename Offset = int32_t>
+using RelativeFunctionPointer =
+    TargetRelativeFunctionPointer<InProcess, Pointee, Nullable, Offset>;
 
 } // end namespace swift
 

@@ -2615,7 +2615,7 @@ internal func _resolveKeyPathGenericArgReference(
     var offset: Int32 = 0
     _memcpy(dest: &offset, src: pointerReference, size: 4)
 
-    let accessorPtrRaw = _resolveRelativeAddress(pointerReference, offset)
+    let accessorPtrRaw = _resolveRelativeFunctionAddress(pointerReference, offset)
     let accessorPtrSigned =
       _PtrAuth.sign(pointer: accessorPtrRaw,
               key: .processIndependentCode,
@@ -2714,6 +2714,23 @@ internal func _resolveRelativeIndirectableAddress(_ base: UnsafeRawPointer,
   }
   return _resolveRelativeAddress(base, offset)
 }
+
+internal func _resolveRelativeIndirectAddress(_ base: UnsafeRawPointer,
+                                              _ offset: Int32) -> UnsafeRawPointer {
+  return _resolveRelativeAddress(base, offset).load(as: UnsafeRawPointer.self)
+}
+
+internal func _resolveRelativeFunctionAddress(_ base: UnsafeRawPointer, _ offset: Int32)
+    -> UnsafeRawPointer {
+// When target is harvard architecture, relative function pointer should
+// always be indirect to avoid cross address-space relative pointer.
+#if SWIFT_INDIRECT_RELATIVE_FUNCTION_POINTER
+  return _resolveRelativeIndirectAddress(base, offset)
+#else
+  return _resolveRelativeAddress(base, offset)
+#endif
+}
+
 internal func _loadRelativeAddress<T>(at: UnsafeRawPointer,
                                       fromByteOffset: Int = 0,
                                       as: T.Type) -> T {
@@ -2780,12 +2797,12 @@ internal func _walkKeyPathPattern<W: KeyPathPatternVisitor>(
     let idValue = _pop(from: &componentBuffer, as: Int32.self)
     let getterBase = componentBuffer.baseAddress.unsafelyUnwrapped
     let getterRef = _pop(from: &componentBuffer, as: Int32.self)
-    let getter = _resolveRelativeAddress(getterBase, getterRef)
+    let getter = _resolveRelativeFunctionAddress(getterBase, getterRef)
     let setter: UnsafeRawPointer?
     if header.isComputedSettable {
       let setterBase = componentBuffer.baseAddress.unsafelyUnwrapped
       let setterRef = _pop(from: &componentBuffer, as: Int32.self)
-      setter = _resolveRelativeAddress(setterBase, setterRef)
+      setter = _resolveRelativeFunctionAddress(setterBase, setterRef)
     } else {
       setter = nil
     }
@@ -2799,7 +2816,7 @@ internal func _walkKeyPathPattern<W: KeyPathPatternVisitor>(
     if header.hasComputedArguments {
       let getLayoutBase = componentBuffer.baseAddress.unsafelyUnwrapped
       let getLayoutRef = _pop(from: &componentBuffer, as: Int32.self)
-      let getLayoutRaw = _resolveRelativeAddress(getLayoutBase, getLayoutRef)
+      let getLayoutRaw = _resolveRelativeFunctionAddress(getLayoutBase, getLayoutRef)
       let getLayoutSigned = _PtrAuth.sign(pointer: getLayoutRaw,
         key: .processIndependentCode,
         discriminator: _PtrAuth.discriminator(for: KeyPathComputedArgumentLayoutFn.self))
@@ -2817,8 +2834,8 @@ internal func _walkKeyPathPattern<W: KeyPathPatternVisitor>(
 
       let initializerBase = componentBuffer.baseAddress.unsafelyUnwrapped
       let initializerRef = _pop(from: &componentBuffer, as: Int32.self)
-      let initializerRaw = _resolveRelativeAddress(initializerBase,
-                                                   initializerRef)
+      let initializerRaw = _resolveRelativeFunctionAddress(initializerBase,
+                                                           initializerRef)
       let initializerSigned = _PtrAuth.sign(pointer: initializerRaw,
         key: .processIndependentCode,
         discriminator: _PtrAuth.discriminator(for: KeyPathComputedArgumentInitializerFn.self))

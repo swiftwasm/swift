@@ -140,6 +140,9 @@ ResolveAsSymbolicReference::operator()(SymbolicReferenceKind kind,
     // invoke the function to resolve the thing they're trying to access.
     nodeKind = Node::Kind::AccessorFunctionReference;
     isType = false;
+#if SWIFT_INDIRECT_RELATIVE_FUNCTION_POINTER
+    ptr = *reinterpret_cast<uintptr_t *>(ptr);
+#endif
 #if SWIFT_PTRAUTH
     // The pointer refers to an accessor function, which we need to sign.
     ptr = (uintptr_t)ptrauth_sign_unauthenticated((void*)ptr,
@@ -186,6 +189,11 @@ ResolveToDemanglingForContext::operator()(SymbolicReferenceKind kind,
                                           const void *base) {
   auto ptr = resolveSymbolicReferenceOffset(kind, isIndirect, offset, base);
 
+#if SWIFT_INDIRECT_RELATIVE_FUNCTION_POINTER
+  if (kind == SymbolicReferenceKind::AccessorFunctionReference) {
+    ptr = *reinterpret_cast<uintptr_t *>(ptr);
+  }
+#endif
   return _buildDemanglingForSymbolicReference(kind, (const void *)ptr, Dem);
 }
 
@@ -2600,10 +2608,16 @@ void DynamicReplacementDescriptor::enableReplacement() const {
 
   // Link the replacement entry.
   chainRoot->next = chainEntry.get();
-  // chainRoot->implementationFunction = replacementFunction.get();
+  void *replacementFn = replacementFunction.get();
+#if SWIFT_INDIRECT_RELATIVE_FUNCTION_POINTER
+  if (!replacedFunctionKey->isAsync()) {
+    replacementFn = *reinterpret_cast<void **>(replacementFn);
+  }
+#endif
+  // chainRoot->implementationFunction = replacementFn;
   swift_ptrauth_init_code_or_data(
       reinterpret_cast<void **>(&chainRoot->implementationFunction),
-      reinterpret_cast<void *>(replacementFunction.get()),
+      reinterpret_cast<void *>(replacementFn),
       replacedFunctionKey->getExtraDiscriminator(),
       !replacedFunctionKey->isAsync());
 }
