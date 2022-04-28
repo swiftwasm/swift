@@ -150,7 +150,7 @@
                 "swift-xcode-playground-support": "release/5.7",
                 "ninja": "release",
                 "icu": "release-65-1",
-                "yams": "4.0.2",
+                "yams": "5.0.1",
                 "cmake": "v3.19.6",
                 "indexstore-db": "release/5.7",
                 "sourcekit-lsp": "release/5.7",
