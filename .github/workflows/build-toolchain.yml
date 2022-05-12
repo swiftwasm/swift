@@ -220,7 +220,10 @@ jobs:
           sudo rm -rf /opt/hostedtoolcache
           sudo rm -rf /usr/share/dotnet
           sudo apt clean
-          docker rmi $(docker image ls -aq)
+          
+          if docker info > /dev/null 2>&1; then
+            docker rmi $(docker image ls -aq)
+          fi
           df -h
 
       - uses: actions/checkout@v2
