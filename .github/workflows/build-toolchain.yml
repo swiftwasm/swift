@@ -263,7 +263,7 @@ jobs:
         run: |
 
           case "${{ matrix.target }}" in
-            "amazonlinux2_x86_64" | "ubuntu20.04_x86_64" | "ubuntu18.04_x86_64" | "ubuntu20.04_aarch64" | "macos_x86_64" | "macos_arm64")
+            "amazonlinux2_x86_64" | "ubuntu22.04_x86_64" | "ubuntu20.04_x86_64" | "ubuntu18.04_x86_64" | "ubuntu20.04_aarch64" | "macos_x86_64" | "macos_arm64")
               ./swift/utils/webassembly/ci.sh
             ;;
             *)
