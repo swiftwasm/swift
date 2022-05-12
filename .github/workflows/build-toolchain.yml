@@ -8,6 +8,7 @@ on:
       - swiftwasm-release/5.4
       - swiftwasm-release/5.5
       - swiftwasm-release/5.6
+      - swiftwasm-release/5.7
   pull_request:
     branches:
       - swiftwasm
@@ -15,6 +16,7 @@ on:
       - swiftwasm-release/5.4
       - swiftwasm-release/5.5
       - swiftwasm-release/5.6
+      - swiftwasm-release/5.7
     types: [opened, synchronize, reopened, labeled]
 jobs:
   start-runner:
@@ -110,6 +112,17 @@ jobs:
             "build_os": "ubuntu-20.04",
             "agent_query": "ubuntu-20.04",
             "target": "ubuntu20.04_x86_64",
+            "run_stdlib_test": true,
+            "run_full_test": false,
+            "run_e2e_test": true,
+            "build_hello_wasm": true,
+            "clean_build_dir": false,
+            "free_disk_space": true
+          },
+          {
+            "build_os": "ubuntu-22.04",
+            "agent_query": "ubuntu-22.04",
+            "target": "ubuntu22.04_x86_64",
             "run_stdlib_test": true,
             "run_full_test": false,
             "run_e2e_test": true,
