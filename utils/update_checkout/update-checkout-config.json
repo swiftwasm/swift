@@ -101,7 +101,7 @@
                 "swift-syntax": "main",
                 "swift-system": "1.1.1",
                 "swift-stress-tester": "main",
-                "swift-corelibs-xctest": "swiftwasm",
+                "swift-corelibs-xctest": "katei/unlock-async-test-api",
                 "swift-corelibs-foundation": "swiftwasm",
                 "swift-corelibs-libdispatch": "main",
                 "swift-integration-tests": "main",
