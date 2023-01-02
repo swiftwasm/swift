@@ -685,6 +685,8 @@ class LinkEntity {
             isa<ProtocolDecl>(decl->getDeclContext()));
   }
 
+  SILDeclRef::Kind getSILDeclRefKind() const;
+
 public:
   static LinkEntity forDispatchThunk(SILDeclRef declRef) {
     assert(isValidResilientMethodRef(declRef));
@@ -810,6 +812,7 @@ public:
 
   static LinkEntity forTypeMetadata(CanType concreteType,
                                     TypeMetadataAddress addr) {
+    assert(!isObjCImplementation(concreteType));
     LinkEntity entity;
     entity.setForType(Kind::TypeMetadata, concreteType);
     entity.Data |= LINKENTITY_SET_FIELD(MetadataAddress, unsigned(addr));
@@ -872,12 +875,14 @@ public:
   }
 
   static LinkEntity forNominalTypeDescriptor(NominalTypeDecl *decl) {
+    assert(!isObjCImplementation(decl));
     LinkEntity entity;
     entity.setForDecl(Kind::NominalTypeDescriptor, decl);
     return entity;
   }
 
   static LinkEntity forNominalTypeDescriptorRecord(NominalTypeDecl *decl) {
+    assert(!isObjCImplementation(decl));
     LinkEntity entity;
     entity.setForDecl(Kind::NominalTypeDescriptorRecord, decl);
     return entity;
@@ -1504,6 +1509,9 @@ public:
            getKind() == Kind::OpaqueTypeDescriptorAccessorKey ||
            getKind() == Kind::OpaqueTypeDescriptorAccessorVar;
   }
+  bool isOpaqueTypeDescriptorAccessorImpl() const {
+    return getKind() == Kind::OpaqueTypeDescriptorAccessorImpl;
+  }
   bool isAllocator() const {
     assert(getKind() == Kind::DynamicallyReplaceableFunctionImpl ||
            getKind() == Kind::DynamicallyReplaceableFunctionKeyAST ||
@@ -1535,6 +1543,18 @@ public:
   bool isDynamicallyReplaceableFunctionKey() const {
     return getKind() == Kind::DynamicallyReplaceableFunctionKey;
   }
+  bool isDynamicallyReplaceableFunctionImpl() const {
+    return getKind() == Kind::DynamicallyReplaceableFunctionImpl;
+  }
+  bool isTypeMetadataAccessFunction() const {
+    return getKind() == Kind::TypeMetadataAccessFunction;
+  }
+  bool isDispatchThunk() const {
+    return getKind() == Kind::DispatchThunk ||
+           getKind() == Kind::DispatchThunkInitializer ||
+           getKind() == Kind::DispatchThunkAllocator ||
+           getKind() == Kind::DispatchThunkDerivative;
+  }
 
   /// Determine whether this entity will be weak-imported.
   bool isWeakImported(ModuleDecl *module) const;
@@ -1553,6 +1573,16 @@ public:
   bool isAlwaysSharedLinkage() const;
 #undef LINKENTITY_GET_FIELD
 #undef LINKENTITY_SET_FIELD
+
+private:
+  static bool isObjCImplementation(NominalTypeDecl *NTD) {
+    if (NTD)
+      return NTD->getObjCImplementationDecl();
+    return false;
+  }
+  static bool isObjCImplementation(CanType ty) {
+    return isObjCImplementation(ty->getClassOrBoundGenericClass());
+  }
 };
 
 struct IRLinkage {

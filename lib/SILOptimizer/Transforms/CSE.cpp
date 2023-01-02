@@ -665,7 +665,8 @@ private:
   };
 
   bool processNode(DominanceInfoNode *Node);
-  bool processOpenExistentialRef(OpenExistentialRefInst *Inst, ValueBase *V);
+  bool processOpenExistentialRef(OpenExistentialRefInst *Inst,
+                                 OpenExistentialRefInst *V);
 };
 } // namespace swift
 
@@ -802,11 +803,7 @@ static void updateBasicBlockArgTypes(SILBasicBlock *BB,
 /// \Inst is the open_existential_ref instruction
 /// \V is the dominating open_existential_ref instruction
 bool CSE::processOpenExistentialRef(OpenExistentialRefInst *Inst,
-                                    ValueBase *V) {
-  // All the open instructions are single-value instructions.
-  auto VI = dyn_cast<SingleValueInstruction>(V);
-  if (!VI) return false;
-
+                                    OpenExistentialRefInst *VI) {
   llvm::SmallSetVector<SILInstruction *, 16> Candidates;
   const auto OldOpenedArchetype = Inst->getDefinedOpenedArchetype();
   const auto NewOpenedArchetype = VI->getDefinedOpenedArchetype();
@@ -1416,7 +1413,7 @@ class SILCSE : public SILFunctionTransform {
     if (C.processLazyPropertyGetters()) {
       // Cleanup the dead blocks from the inlined lazy property getters.
       removeUnreachableBlocks(*Fn);
-      invalidateAnalysis(SILAnalysis::InvalidationKind::Everything);
+      invalidateAnalysis(SILAnalysis::InvalidationKind::FunctionBody);
     } else if (Changed) {
       invalidateAnalysis(SILAnalysis::InvalidationKind::CallsAndInstructions);
     }

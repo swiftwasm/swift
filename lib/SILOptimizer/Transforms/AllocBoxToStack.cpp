@@ -70,7 +70,8 @@ static bool useCaptured(Operand *UI) {
   // These instructions do not cause the address to escape.
   if (isa<DebugValueInst>(User)
       || isa<StrongReleaseInst>(User) || isa<StrongRetainInst>(User)
-      || isa<DestroyValueInst>(User))
+      || isa<DestroyValueInst>(User)
+      || isa<EndBorrowInst>(User))
     return false;
 
   if (auto *Store = dyn_cast<StoreInst>(User)) {
@@ -254,8 +255,9 @@ static bool partialApplyEscapes(SILValue V, bool examineApply) {
     // If we have a copy_value, the copy value does not cause an escape, but its
     // uses might do so... so add the copy_value's uses to the worklist and
     // continue.
-    if (auto CVI = dyn_cast<CopyValueInst>(User)) {
-      llvm::copy(CVI->getUses(), std::back_inserter(Worklist));
+    if (isa<CopyValueInst>(User) || isa<BeginBorrowInst>(User)) {
+      llvm::copy(cast<SingleValueInstruction>(User)->getUses(),
+                 std::back_inserter(Worklist));
       continue;
     }
 
@@ -575,7 +577,7 @@ static bool rewriteAllocBoxAsAllocStack(AllocBoxInst *ABI) {
   SILValue StackBox = ASI;
   if (Kind) {
     StackBox =
-        Builder.createMarkUninitialized(ASI->getLoc(), ASI, Kind.getValue());
+        Builder.createMarkUninitialized(ASI->getLoc(), ASI, Kind.value());
   }
 
   // Replace all uses of the address of the box's contained value with
@@ -799,10 +801,7 @@ PromotedParamCloner::populateCloned() {
                                            Cloned->getModule().Types, 0);
       auto *promotedArg =
           ClonedEntryBB->createFunctionArgument(promotedTy, (*I)->getDecl());
-      promotedArg->setNoImplicitCopy(
-          cast<SILFunctionArgument>(*I)->isNoImplicitCopy());
-      promotedArg->setLifetimeAnnotation(
-          cast<SILFunctionArgument>(*I)->getLifetimeAnnotation());
+      promotedArg->copyFlags(cast<SILFunctionArgument>(*I));
       OrigPromotedParameters.insert(*I);
 
       NewPromotedArgs[ArgNo] = promotedArg;
@@ -817,10 +816,7 @@ PromotedParamCloner::populateCloned() {
       // Create a new argument which copies the original argument.
       auto *newArg = ClonedEntryBB->createFunctionArgument((*I)->getType(),
                                                            (*I)->getDecl());
-      newArg->setNoImplicitCopy(
-          cast<SILFunctionArgument>(*I)->isNoImplicitCopy());
-      newArg->setLifetimeAnnotation(
-          cast<SILFunctionArgument>(*I)->getLifetimeAnnotation());
+      newArg->copyFlags(cast<SILFunctionArgument>(*I));
       entryArgs.push_back(newArg);
     }
     ++ArgNo;
@@ -1082,7 +1078,7 @@ static void rewriteApplySites(AllocBoxToStackState &pass) {
     if (!iterAndSuccess.second) {
       // Blot the previously inserted apply and insert at the end with updated
       // indices
-      auto OldIndices = iterAndSuccess.first->getValue().second;
+      auto OldIndices = iterAndSuccess.first->value().second;
       OldIndices.push_back(CalleeArgIndexNumber);
       AppliesToSpecialize.erase(iterAndSuccess.first);
       AppliesToSpecialize.insert(std::make_pair(Apply, OldIndices));
@@ -1094,11 +1090,11 @@ static void rewriteApplySites(AllocBoxToStackState &pass) {
   // ApplySite.
   SILOptFunctionBuilder FuncBuilder(*pass.T);
   for (auto &It : AppliesToSpecialize) {
-    if (!It.hasValue()) {
+    if (!It.has_value()) {
       continue;
     }
-    auto Apply = It.getValue().first;
-    auto Indices = It.getValue().second;
+    auto Apply = It.value().first;
+    auto Indices = It.value().second;
     // Sort the indices and unique them.
     sortUnique(Indices);
 

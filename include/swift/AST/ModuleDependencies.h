@@ -35,6 +35,7 @@ class ClangModuleDependenciesCacheImpl;
 class SourceFile;
 class ASTContext;
 class Identifier;
+class CompilerInstance;
 
 /// Which kind of module dependencies we are looking for.
 enum class ModuleDependenciesKind : int8_t {
@@ -74,12 +75,6 @@ struct ModuleDependenciesKindHash {
     using UnderlyingType = std::underlying_type<ModuleDependenciesKind>::type;
     return std::hash<UnderlyingType>{}(static_cast<UnderlyingType>(k));
   }
-};
-
-/// Details of a given module used for dependency scanner cache queries.
-struct ModuleLookupSpecifics {
-  Optional<ModuleDependenciesKind> kind;
-  llvm::StringSet<> currentSearchPaths;
 };
 
 /// Base class for the variant storage of ModuleDependencies.
@@ -125,6 +120,9 @@ struct CommonSwiftTextualModuleDependencyDetails {
 class SwiftInterfaceModuleDependenciesStorage :
   public ModuleDependenciesStorageBase {
 public:
+  /// Destination output path
+  const std::string moduleOutputPath;
+
   /// The Swift interface file to be used to generate the module file.
   const std::string swiftInterfaceFile;
 
@@ -145,6 +143,7 @@ public:
   CommonSwiftTextualModuleDependencyDetails textualModuleDetails;
 
   SwiftInterfaceModuleDependenciesStorage(
+      const std::string moduleOutputPath,
       const std::string swiftInterfaceFile,
       ArrayRef<std::string> compiledModuleCandidates,
       ArrayRef<StringRef> buildCommandLine,
@@ -152,6 +151,7 @@ public:
       StringRef contextHash,
       bool isFramework
   ) : ModuleDependenciesStorageBase(ModuleDependenciesKind::SwiftInterface),
+      moduleOutputPath(moduleOutputPath),
       swiftInterfaceFile(swiftInterfaceFile),
       compiledModuleCandidates(compiledModuleCandidates.begin(),
                                compiledModuleCandidates.end()),
@@ -237,6 +237,9 @@ public:
 /// This class is mostly an implementation detail for \c ModuleDependencies.
 class ClangModuleDependenciesStorage : public ModuleDependenciesStorageBase {
 public:
+  /// Destination output path
+  const std::string pcmOutputPath;
+  
   /// The module map file used to generate the Clang module.
   const std::string moduleMapFile;
 
@@ -254,12 +257,14 @@ public:
   const std::vector<std::string> capturedPCMArgs;
 
   ClangModuleDependenciesStorage(
+      const std::string &pcmOutputPath,
       const std::string &moduleMapFile,
       const std::string &contextHash,
       const std::vector<std::string> &nonPathCommandLine,
       const std::vector<std::string> &fileDependencies,
       const std::vector<std::string> &capturedPCMArgs
   ) : ModuleDependenciesStorageBase(ModuleDependenciesKind::Clang),
+      pcmOutputPath(pcmOutputPath),
       moduleMapFile(moduleMapFile),
       contextHash(contextHash),
       nonPathCommandLine(nonPathCommandLine),
@@ -321,6 +326,7 @@ private:
     : storage(std::move(storage)) { }
 
 public:
+  ModuleDependencies() = default;
   ModuleDependencies(const ModuleDependencies &other)
     : storage(other.storage->clone()) { }
   ModuleDependencies(ModuleDependencies &&other) = default;
@@ -335,7 +341,8 @@ public:
   /// Describe the module dependencies for a Swift module that can be
   /// built from a Swift interface file (\c .swiftinterface).
   static ModuleDependencies forSwiftInterfaceModule(
-      std::string swiftInterfaceFile,
+      const std::string &moduleOutputPath,
+      const std::string &swiftInterfaceFile,
       ArrayRef<std::string> compiledCandidates,
       ArrayRef<StringRef> buildCommands,
       ArrayRef<StringRef> extraPCMArgs,
@@ -343,7 +350,7 @@ public:
       bool isFramework) {
     return ModuleDependencies(
         std::make_unique<SwiftInterfaceModuleDependenciesStorage>(
-          swiftInterfaceFile, compiledCandidates, buildCommands,
+          moduleOutputPath, swiftInterfaceFile, compiledCandidates, buildCommands,
           extraPCMArgs, contextHash, isFramework));
   }
 
@@ -367,6 +374,7 @@ public:
   /// Describe the module dependencies for a Clang module that can be
   /// built from a module map and headers.
   static ModuleDependencies forClangModule(
+      const std::string &pcmOutputPath,
       const std::string &moduleMapFile,
       const std::string &contextHash,
       const std::vector<std::string> &nonPathCommandLine,
@@ -374,8 +382,8 @@ public:
       const std::vector<std::string> &capturedPCMArgs) {
     return ModuleDependencies(
         std::make_unique<ClangModuleDependenciesStorage>(
-          moduleMapFile, contextHash, nonPathCommandLine,
-          fileDependencies, capturedPCMArgs));
+          pcmOutputPath, moduleMapFile, contextHash,
+          nonPathCommandLine, fileDependencies, capturedPCMArgs));
   }
 
   /// Describe a placeholder dependency swift module.
@@ -469,9 +477,10 @@ public:
 
 using ModuleDependencyID = std::pair<std::string, ModuleDependenciesKind>;
 using ModuleDependenciesVector = llvm::SmallVector<ModuleDependencies, 1>;
+using ModuleNameToDependencyMap = llvm::StringMap<ModuleDependencies>;
 using ModuleDependenciesKindMap =
     std::unordered_map<ModuleDependenciesKind,
-                       llvm::StringMap<ModuleDependenciesVector>,
+                       ModuleNameToDependencyMap,
                        ModuleDependenciesKindHash>;
 using ModuleDependenciesKindRefMap =
     std::unordered_map<ModuleDependenciesKind,
@@ -485,45 +494,49 @@ using ModuleDependenciesKindRefMap =
 /// `DependencyScanningTool`). It is not to be queried directly, but is rather
 /// meant to be wrapped in an instance of `ModuleDependenciesCache`, responsible
 /// for recording new dependencies and answering cache queries in a given scan.
-/// Queries to this cache must be disambiguated with a set of search paths to
-/// ensure that the returned cached dependency was one that can be found in the
-/// current scanning action's filesystem view.
 class GlobalModuleDependenciesCache {
-  /// Global cache contents specific to a target-triple specified on a scanner invocation
-  struct TargetSpecificGlobalCacheState {
+  /// Global cache contents specific to a specific scanner invocation context
+  struct ContextSpecificGlobalCacheState {
     /// All cached module dependencies, in the order in which they were
     /// encountered.
     std::vector<ModuleDependencyID> AllModules;
 
     /// Dependencies for modules that have already been computed.
-    /// This maps a dependency kind to a map of a module's name to a vector of Dependency objects,
-    /// which correspond to instances of the same module that may have been found
-    /// in different sets of search paths.
+    /// This maps a dependency kind to a map of a module's name to a Dependency
+    /// object
     ModuleDependenciesKindMap ModuleDependenciesMap;
   };
 
-  /// All cached Swift source module dependencies, in the order in which they were encountered
+  /// The persistent Clang dependency scanner service
+  clang::tooling::dependencies::DependencyScanningService ClangScanningService;
+  /// The global file system cache.
+  Optional<
+      clang::tooling::dependencies::DependencyScanningFilesystemSharedCache>
+      SharedFilesystemCache;
+
+  /// All cached Swift source module dependencies, in the order in which they
+  /// were encountered
   std::vector<ModuleDependencyID> AllSourceModules;
+  /// Dependencies for all Swift source-based modules discovered. Each one is
+  /// the main module of a prior invocation of the scanner.
+  ModuleNameToDependencyMap SwiftSourceModuleDependenciesMap;
 
-  /// Dependencies for all Swift source-based modules discovered. Each one is the main
-  /// module of a prior invocation of the scanner.
-  llvm::StringMap<ModuleDependencies> SwiftSourceModuleDependenciesMap;
+  /// A map from a String representing the target triple of a scanner invocation
+  /// to the corresponding cached dependencies discovered so far when using this
+  /// triple.
+  llvm::StringMap<std::unique_ptr<ContextSpecificGlobalCacheState>>
+      ContextSpecificCacheMap;
 
-  /// A map from a String representing the target triple of a scanner invocation to the corresponding
-  /// cached dependencies discovered so far when using this triple.
-  llvm::StringMap<std::unique_ptr<TargetSpecificGlobalCacheState>> TargetSpecificCacheMap;
-
-  /// The current target triple cache configuration
-  Optional<std::string> CurrentTriple;
-
-  /// The triples used by scanners using this cache, in the order in which they were used
-  std::vector<std::string> AllTriples;
+  /// The current context hash configuration
+  Optional<std::string> CurrentContextHash;
+  /// The context hashes used by scanners using this cache, in the order in
+  /// which they were used
+  std::vector<std::string> AllContextHashes;
 
   /// Retrieve the dependencies map that corresponds to the given dependency
   /// kind.
-  llvm::StringMap<ModuleDependenciesVector> &
-  getDependenciesMap(ModuleDependenciesKind kind);
-  const llvm::StringMap<ModuleDependenciesVector> &
+  ModuleNameToDependencyMap &getDependenciesMap(ModuleDependenciesKind kind);
+  const ModuleNameToDependencyMap &
   getDependenciesMap(ModuleDependenciesKind kind) const;
 
 public:
@@ -533,47 +546,55 @@ public:
   operator=(const GlobalModuleDependenciesCache &) = delete;
   virtual ~GlobalModuleDependenciesCache() {}
 
-  void configureForTriple(std::string triple);
-
-  const std::vector<std::string>& getAllTriples() const {
-    return AllTriples;
+  /// Query the service's filesystem cache
+  clang::tooling::dependencies::DependencyScanningFilesystemSharedCache &
+  getSharedFilesystemCache() {
+    assert(SharedFilesystemCache && "Expected a shared cache");
+    return *SharedFilesystemCache;
   }
 
+  /// Wrap the filesystem on the specified `CompilerInstance` with a
+  /// caching `DependencyScanningWorkerFilesystem`
+  void overlaySharedFilesystemCacheForCompilation(CompilerInstance &Instance);
 private:
   /// Enforce clients not being allowed to query this cache directly, it must be
   /// wrapped in an instance of `ModuleDependenciesCache`.
   friend class ModuleDependenciesCache;
+  friend class ModuleDependenciesCacheDeserializer;
+  friend class ModuleDependenciesCacheSerializer;
+
+  /// Configure the current state of the cache to respond to queries
+  /// for the specified scanning context hash.
+  void configureForContextHash(std::string scanningContextHash);
+
+  /// Return context hashes of all scanner invocations that have used
+  /// this cache instance.
+  const std::vector<std::string> &getAllContextHashes() const {
+    return AllContextHashes;
+  }
 
   /// Whether we have cached dependency information for the given module.
   bool hasDependencies(StringRef moduleName,
-                       ModuleLookupSpecifics details) const;
+                       Optional<ModuleDependenciesKind> kind) const;
 
-  /// Look for module dependencies for a module with the given name given
-  /// current search paths.
-  ///
-  /// \returns the cached result, or \c None if there is no cached entry.
-  Optional<ModuleDependencies>
-  findDependencies(StringRef moduleName, ModuleLookupSpecifics details) const;
+  /// Return a pointer to the context-specific cache state of the current
+  /// scanning action.
+  ContextSpecificGlobalCacheState *getCurrentCache() const;
 
-  /// Return a pointer to the target-specific cache state of the current triple configuration.
-  TargetSpecificGlobalCacheState* getCurrentCache() const;
-
-  /// Return a pointer to the target-specific cache state of the specified triple configuration.
-  TargetSpecificGlobalCacheState* getCacheForTriple(StringRef triple) const;
-
-public:
-  /// Look for module dependencies for a module with the given name.
-  /// This method has a deliberately-obtuse name to indicate that it is not to
-  /// be used for general queries.
-  ///
-  /// \returns the cached result, or \c None if there is no cached entry.
-  Optional<ModuleDependenciesVector>
-  findAllDependenciesIrrespectiveOfSearchPaths(
-      StringRef moduleName, Optional<ModuleDependenciesKind> kind) const;
+  /// Return a pointer to the cache state of the specified context hash.
+  ContextSpecificGlobalCacheState *
+  getCacheForScanningContextHash(StringRef scanningContextHash) const;
 
   /// Look for source-based module dependency details
   Optional<ModuleDependencies>
   findSourceModuleDependency(StringRef moduleName) const;
+
+  /// Look for module dependencies for a module with the given name
+  ///
+  /// \returns the cached result, or \c None if there is no cached entry.
+  Optional<ModuleDependencies>
+  findDependencies(StringRef moduleName,
+                   Optional<ModuleDependenciesKind> kind) const;
 
   /// Record dependencies for the given module.
   const ModuleDependencies *recordDependencies(StringRef moduleName,
@@ -583,11 +604,14 @@ public:
   const ModuleDependencies *updateDependencies(ModuleDependencyID moduleID,
                                                ModuleDependencies dependencies);
 
-  /// Reference the list of all module dependencies that are not source-based modules
-  /// (i.e. interface dependencies, binary dependencies, clang dependencies).
-  const std::vector<ModuleDependencyID> &getAllNonSourceModules(StringRef triple) const {
-    auto targetSpecificCache = getCacheForTriple(triple);
-    return targetSpecificCache->AllModules;
+  /// Reference the list of all module dependencies that are not source-based
+  /// modules (i.e. interface dependencies, binary dependencies, clang
+  /// dependencies).
+  const std::vector<ModuleDependencyID> &
+  getAllNonSourceModules(StringRef scanningContextHash) const {
+    auto contextSpecificCache =
+        getCacheForScanningContextHash(scanningContextHash);
+    return contextSpecificCache->AllModules;
   }
 
   /// Return the list of all source-based modules discovered by this cache
@@ -601,8 +625,7 @@ public:
 /// scanning action, and wraps an instance of a `GlobalModuleDependenciesCache`
 /// which may carry cached scanning information from prior scanning actions.
 /// This cache maintains a store of references to all dependencies found within
-/// the current scanning action (with their values stored in the global Cache),
-/// since these do not require clients to disambiguate them with search paths.
+/// the current scanning action (with their values stored in the global Cache).
 class ModuleDependenciesCache {
 private:
   GlobalModuleDependenciesCache &globalCache;
@@ -613,15 +636,14 @@ private:
   ModuleDependenciesKindRefMap ModuleDependenciesMap;
   
   /// Name of the module under scan
-  StringRef mainScanModuleName;
+  std::string mainScanModuleName;
+  /// The context hash of the current scanning invocation
+  std::string scannerContextHash;
+
   /// Set containing all of the Clang modules that have already been seen.
   llvm::StringSet<> alreadySeenClangModules;
-  /// The 'persistent' Clang dependency scanner service
-  /// TODO: Share this service among common scanner invocations
-  clang::tooling::dependencies::DependencyScanningService clangScanningService;
   /// The Clang dependency scanner tool
   clang::tooling::dependencies::DependencyScanningTool clangScanningTool;
-
   /// Discovered Clang modules are only cached locally.
   llvm::StringMap<ModuleDependenciesVector> clangModuleDependencies;
 
@@ -634,25 +656,26 @@ private:
 
   /// Local cache results lookup, only for modules which were discovered during
   /// the current scanner invocation.
-  bool hasDependencies(StringRef moduleName,
-                       Optional<ModuleDependenciesKind> kind) const;
+  bool hasDependenciesLocalOnly(StringRef moduleName,
+                                Optional<ModuleDependenciesKind> kind) const;
 
   /// Local cache results lookup, only for modules which were discovered during
   /// the current scanner invocation.
   Optional<const ModuleDependencies *>
-  findDependencies(StringRef moduleName,
-                   Optional<ModuleDependenciesKind> kind) const;
+  findDependenciesLocalOnly(StringRef moduleName,
+                            Optional<ModuleDependenciesKind> kind) const;
 
 public:
   ModuleDependenciesCache(GlobalModuleDependenciesCache &globalCache,
-                          StringRef mainScanModuleName);
+                          std::string mainScanModuleName,
+                          std::string scanningContextHash);
   ModuleDependenciesCache(const ModuleDependenciesCache &) = delete;
   ModuleDependenciesCache &operator=(const ModuleDependenciesCache &) = delete;
 
 public:
   /// Whether we have cached dependency information for the given module.
   bool hasDependencies(StringRef moduleName,
-                       ModuleLookupSpecifics details) const;
+                       Optional<ModuleDependenciesKind> kind) const;
 
   /// Produce a reference to the Clang scanner tool associated with this cache
   clang::tooling::dependencies::DependencyScanningTool& getClangScannerTool() {
@@ -662,24 +685,12 @@ public:
     return alreadySeenClangModules;
   }
   
-  /// Look for module dependencies for a module with the given name given
-  /// current search paths.
+  /// Look for module dependencies for a module with the given name
   ///
   /// \returns the cached result, or \c None if there is no cached entry.
   Optional<ModuleDependencies>
-  findDependencies(StringRef moduleName, ModuleLookupSpecifics details) const;
-
-  /// Look for module dependencies for a module with the given name.
-  /// This method has a deliberately-obtuse name to indicate that it is not to
-  /// be used for general queries.
-  ///
-  /// \returns the cached result, or \c None if there is no cached entry.
-  Optional<ModuleDependenciesVector>
-  findAllDependenciesIrrespectiveOfSearchPaths(
-      StringRef moduleName, Optional<ModuleDependenciesKind> kind) const {
-    return globalCache.findAllDependenciesIrrespectiveOfSearchPaths(moduleName,
-                                                                    kind);
-  }
+  findDependencies(StringRef moduleName,
+                   Optional<ModuleDependenciesKind> kind) const;
 
   /// Record dependencies for the given module.
   void recordDependencies(StringRef moduleName,

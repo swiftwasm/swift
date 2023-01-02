@@ -43,7 +43,6 @@
 #include "swift/Parse/LocalContext.h"
 #include "swift/Parse/Parser.h"
 #include "swift/Sema/IDETypeChecking.h"
-#include "swift/Syntax/TokenKinds.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/PointerUnion.h"
 #include "llvm/ADT/SmallString.h"
@@ -98,9 +97,13 @@ namespace {
         return Action::SkipChildren(E);
       } 
 
-      // Capture lists need to be reparented to enclosing autoclosures.
       if (auto CapE = dyn_cast<CaptureListExpr>(E)) {
-        if (isa<AutoClosureExpr>(ParentDC)) {
+        // Capture lists need to be reparented to enclosing autoclosures
+        // and/or initializers of property wrapper backing properties
+        // (because they subsume initializers associated with wrapped
+        // properties).
+        if (isa<AutoClosureExpr>(ParentDC) ||
+            isPropertyWrapperBackingPropertyInitContext(ParentDC)) {
           for (auto &Cap : CapE->getCaptureList()) {
             Cap.PBD->setDeclContext(ParentDC);
             Cap.getVar()->setDeclContext(ParentDC);
@@ -135,6 +138,21 @@ namespace {
       // But we do want to walk into the initializers of local
       // variables.
       return Action::VisitChildrenIf(isa<PatternBindingDecl>(D));
+    }
+
+  private:
+    static bool isPropertyWrapperBackingPropertyInitContext(DeclContext *DC) {
+      auto *init = dyn_cast<PatternBindingInitializer>(DC);
+      if (!init)
+        return false;
+
+      if (auto *PB = init->getBinding()) {
+        auto *var = PB->getSingleVar();
+        return var && var->getOriginalWrappedProperty(
+                          PropertyWrapperSynthesizedPropertyKind::Backing);
+      }
+
+      return false;
     }
   };
 
@@ -419,6 +437,23 @@ LabeledStmt *swift::findBreakOrContinueStmtTarget(
   return nullptr;
 }
 
+LabeledStmt *
+BreakTargetRequest::evaluate(Evaluator &evaluator, const BreakStmt *BS) const {
+  auto *DC = BS->getDeclContext();
+  return findBreakOrContinueStmtTarget(
+      DC->getASTContext(), DC->getParentSourceFile(), BS->getLoc(),
+      BS->getTargetName(), BS->getTargetLoc(), /*isContinue*/ false, DC);
+}
+
+LabeledStmt *
+ContinueTargetRequest::evaluate(Evaluator &evaluator,
+                                const ContinueStmt *CS) const {
+  auto *DC = CS->getDeclContext();
+  return findBreakOrContinueStmtTarget(
+      DC->getASTContext(), DC->getParentSourceFile(), CS->getLoc(),
+      CS->getTargetName(), CS->getTargetLoc(), /*isContinue*/ true, DC);
+}
+
 static Expr *getDeclRefProvidingExpressionForHasSymbol(Expr *E) {
   // Strip coercions, which are necessary in source to disambiguate overloaded
   // functions or generic functions, e.g.
@@ -471,24 +506,6 @@ bool TypeChecker::typeCheckStmtConditionElement(StmtConditionElement &elt,
   // Typecheck a #available or #unavailable condition.
   if (elt.getKind() == StmtConditionElement::CK_Availability) {
     isFalsable = true;
-
-    // Reject inlinable code using availability macros.
-    PoundAvailableInfo *info = elt.getAvailability();
-    if (auto *decl = dc->getAsDecl()) {
-      auto fragileKind = dc->getFragileFunctionKind();
-      if (fragileKind.kind != FragileFunctionKind::None)
-        for (auto queries : info->getQueries())
-          if (auto availSpec =
-                  dyn_cast<PlatformVersionConstraintAvailabilitySpec>(queries))
-            if (availSpec->getMacroLoc().isValid()) {
-              Context.Diags.diagnose(
-                  availSpec->getMacroLoc(),
-                  swift::diag::availability_macro_in_inlinable,
-                  fragileKind.getSelector());
-              break;
-            }
-    }
-
     return false;
   }
 
@@ -742,7 +759,7 @@ public:
   Stmt *visitReturnStmt(ReturnStmt *RS) {
     auto TheFunc = AnyFunctionRef::fromDeclContext(DC);
 
-    if (!TheFunc.hasValue()) {
+    if (!TheFunc.has_value()) {
       getASTContext().Diags.diagnose(RS->getReturnLoc(),
                                      diag::return_invalid_outside_func);
       return nullptr;
@@ -1030,24 +1047,14 @@ public:
   }
 
   Stmt *visitBreakStmt(BreakStmt *S) {
-    if (auto target = findBreakOrContinueStmtTarget(
-            getASTContext(), DC->getParentSourceFile(), S->getLoc(),
-            S->getTargetName(), S->getTargetLoc(), /*isContinue=*/false,
-            DC)) {
-      S->setTarget(target);
-    }
-
+    // Force the target to be computed in case it produces diagnostics.
+    (void)S->getTarget();
     return S;
   }
 
   Stmt *visitContinueStmt(ContinueStmt *S) {
-    if (auto target = findBreakOrContinueStmtTarget(
-            getASTContext(), DC->getParentSourceFile(), S->getLoc(),
-            S->getTargetName(), S->getTargetLoc(), /*isContinue=*/true,
-            DC)) {
-      S->setTarget(target);
-    }
-
+    // Force the target to be computed in case it produces diagnostics.
+    (void)S->getTarget();
     return S;
   }
 
@@ -1869,10 +1876,17 @@ bool TypeCheckASTNodeAtLocRequest::evaluate(
         auto i = patternInit->getBindingIndex();
         PBD->getPattern(i)->forEachVariable(
             [](VarDecl *VD) { (void)VD->getInterfaceType(); });
-        if (PBD->getInit(i)) {
+        if (auto Init = PBD->getInit(i)) {
           if (!PBD->isInitializerChecked(i)) {
             typeCheckPatternBinding(PBD, i,
                                     /*LeaveClosureBodyUnchecked=*/true);
+            // Retrieve the accessor's body to trigger RecontextualizeClosures
+            // This is important to get the correct USR of variables defined
+            // in closures initializing lazy variables.
+            PBD->getPattern(i)->forEachVariable([](VarDecl *VD) {
+              VD->visitEmittedAccessors(
+                  [&](AccessorDecl *accessor) { (void)accessor->getBody(); });
+            });
             return false;
           }
         }
@@ -1926,9 +1940,19 @@ bool TypeCheckASTNodeAtLocRequest::evaluate(
         if (!braceCharRange.contains(Loc))
           return Action::SkipChildren(S);
 
-        // Reset the node found in a parent context.
-        if (!brace->isImplicit())
-          FoundNode = nullptr;
+        // Reset the node found in a parent context if it's not part of this
+        // brace statement.
+        // We must not reset FoundNode if it's inside thei BraceStmt's source
+        // range because the found node could be inside a capture list, which is
+        // syntactically part of the brace stmt's range but won't be walked as
+        // a child of the brace stmt.
+        if (!brace->isImplicit() && FoundNode) {
+          auto foundNodeCharRange = Lexer::getCharSourceRangeFromSourceRange(
+              SM, FoundNode->getSourceRange());
+          if (!braceCharRange.contains(foundNodeCharRange)) {
+            FoundNode = nullptr;
+          }
+        }
 
         for (ASTNode &node : brace->getElements()) {
           if (SM.isBeforeInBuffer(Loc, node.getStartLoc()))
@@ -1985,6 +2009,18 @@ bool TypeCheckASTNodeAtLocRequest::evaluate(
     PreWalkAction walkToDeclPre(Decl *D) override {
       if (auto *newDC = dyn_cast<DeclContext>(D))
         DC = newDC;
+
+      if (!SM.isBeforeInBuffer(Loc, D->getStartLoc())) {
+        // NOTE: We need to check the character loc here because the target
+        // loc can be inside the last token of the node. i.e. interpolated
+        // string.
+        SourceLoc endLoc = Lexer::getLocForEndOfToken(SM, D->getEndLoc());
+        if (!(SM.isBeforeInBuffer(endLoc, Loc) || endLoc == Loc)) {
+          if (!isa<TopLevelCodeDecl>(D)) {
+            FoundNode = new ASTNode(D);
+          }
+        }
+      }
       return Action::Continue();
     }
 
@@ -1998,7 +2034,7 @@ bool TypeCheckASTNodeAtLocRequest::evaluate(
   }
 
   // Nothing found at the location, or the decl context does not own the 'Loc'.
-  if (finder.isNull())
+  if (finder.isNull() || !finder.getDeclContext())
     return true;
 
   DeclContext *DC = finder.getDeclContext();
@@ -2120,19 +2156,35 @@ TypeCheckFunctionBodyRequest::evaluate(Evaluator &evaluator,
       // what the type of the expression is.  Take the inserted return back out.
       body->setLastElement(func->getSingleExpressionBody());
     }
-  } else if (isa<ConstructorDecl>(AFD) &&
-             (body->empty() ||
-                !isKnownEndOfConstructor(body->getLastElement()))) {
-    // For constructors, we make sure that the body ends with a "return" stmt,
-    // which we either implicitly synthesize, or the user can write.  This
-    // simplifies SILGen.
-    SmallVector<ASTNode, 8> Elts(body->getElements().begin(),
-                                 body->getElements().end());
-    Elts.push_back(new (ctx) ReturnStmt(body->getRBraceLoc(),
-                                        /*value*/nullptr,
-                                        /*implicit*/true));
-    body = BraceStmt::create(ctx, body->getLBraceLoc(), Elts,
-                             body->getRBraceLoc(), body->isImplicit());
+  } else if (auto *ctor = dyn_cast<ConstructorDecl>(AFD)) {
+    // If this is user-defined constructor that requires `_storage`
+    // variable injection, do so now so now.
+    if (auto *storageVar = ctor->getLocalTypeWrapperStorageVar()) {
+      SmallVector<ASTNode, 8> Elts;
+
+      Elts.push_back(storageVar->getParentPatternBinding());
+      Elts.push_back(storageVar);
+
+      Elts.append(body->getElements().begin(),
+                  body->getElements().end());
+
+      body = BraceStmt::create(ctx, body->getLBraceLoc(), Elts,
+                               body->getRBraceLoc(), body->isImplicit());
+    }
+
+    if (body->empty() ||
+        !isKnownEndOfConstructor(body->getLastElement())) {
+      // For constructors, we make sure that the body ends with a "return" stmt,
+      // which we either implicitly synthesize, or the user can write.  This
+      // simplifies SILGen.
+      SmallVector<ASTNode, 8> Elts(body->getElements().begin(),
+                                   body->getElements().end());
+      Elts.push_back(new (ctx) ReturnStmt(body->getRBraceLoc(),
+                                          /*value*/nullptr,
+                                          /*implicit*/true));
+      body = BraceStmt::create(ctx, body->getLBraceLoc(), Elts,
+                               body->getRBraceLoc(), body->isImplicit());
+    }
   }
 
   // Typechecking, in particular ApplySolution is going to replace closures

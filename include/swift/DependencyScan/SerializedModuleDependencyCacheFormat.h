@@ -35,9 +35,8 @@ using llvm::BCRecordLayout;
 using llvm::BCVBR;
 
 /// Every .moddepcache file begins with these 4 bytes, for easy identification.
-const unsigned char MODULE_DEPENDENCY_CACHE_FORMAT_SIGNATURE[] = {'I', 'M', 'D',
-                                                                  'C'};
-const unsigned MODULE_DEPENDENCY_CACHE_FORMAT_VERSION_MAJOR = 2;
+const unsigned char MODULE_DEPENDENCY_CACHE_FORMAT_SIGNATURE[] = {'I', 'M', 'D','C'};
+const unsigned MODULE_DEPENDENCY_CACHE_FORMAT_VERSION_MAJOR = 3;
 /// Increment this on every change.
 const unsigned MODULE_DEPENDENCY_CACHE_FORMAT_VERSION_MINOR = 0;
 
@@ -56,7 +55,7 @@ using IdentifierIDArryField = llvm::BCArray<IdentifierIDField>;
 
 /// Identifiers used to refer to the above arrays
 using FileIDArrayIDField = IdentifierIDField;
-using TripleIDField = IdentifierIDField;
+using ContextHashIDField = IdentifierIDField;
 using DependencyIDArrayIDField = IdentifierIDField;
 using FlagIDArrayIDField = IdentifierIDField;
 
@@ -118,13 +117,14 @@ using IdentifierArrayLayout =
 using ModuleInfoLayout =
     BCRecordLayout<MODULE_NODE,             // ID
                    IdentifierIDField,       // module name
-                   TripleIDField,           // target triple
+                   ContextHashIDField,      // 
                    DependencyIDArrayIDField // directDependencies
                    >;
 
 using SwiftInterfaceModuleDetailsLayout =
     BCRecordLayout<SWIFT_INTERFACE_MODULE_DETAILS_NODE, // ID
-                   FileIDField,                       // swiftInterfaceFile
+                   FileIDField,        // outputFilePath
+                   FileIDField,        // swiftInterfaceFile
                    FileIDArrayIDField, // compiledModuleCandidates
                    FlagIDArrayIDField, // buildCommandLine
                    FlagIDArrayIDField, // extraPCMArgs
@@ -162,6 +162,7 @@ using SwiftPlaceholderModuleDetailsLayout =
 
 using ClangModuleDetailsLayout =
     BCRecordLayout<CLANG_MODULE_DETAILS_NODE, // ID
+                   FileIDField,               // pcmOutputPath
                    FileIDField,               // moduleMapPath
                    ContextHashField,          // contextHash
                    FlagIDArrayIDField,        // commandLine

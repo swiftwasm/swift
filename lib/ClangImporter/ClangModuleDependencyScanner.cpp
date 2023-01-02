@@ -22,26 +22,32 @@
 #include "clang/Tooling/DependencyScanning/DependencyScanningTool.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/Signals.h"
+#include "llvm/Support/Path.h"
 
 using namespace swift;
 
 using namespace clang::tooling;
 using namespace clang::tooling::dependencies;
 
-static std::string lookupModuleOutput(const ModuleID &MID,
-                                      ModuleOutputKind MOK) {
-  // Deciding the output paths is done in swift-driver.
+static std::string moduleCacheRelativeLookupModuleOutput(const ModuleID &MID,
+                                                         ModuleOutputKind MOK,
+                                                         const std::string &moduleCachePathStr) {
+  llvm::SmallString<128> outputPath(moduleCachePathStr);
+  llvm::sys::path::append(outputPath, MID.ModuleName + "-" + MID.ContextHash);
   switch (MOK) {
   case ModuleOutputKind::ModuleFile:
-    return "<replace-me>";
+    llvm::sys::path::replace_extension(outputPath, getExtension(swift::file_types::TY_ClangModuleFile));
+    break;
   case ModuleOutputKind::DependencyFile:
-    return "<replace-me>";
+    llvm::sys::path::replace_extension(outputPath, getExtension(swift::file_types::TY_Dependencies));
+    break;
   case ModuleOutputKind::DependencyTargets:
     return MID.ModuleName + "-" + MID.ContextHash;
   case ModuleOutputKind::DiagnosticSerializationFile:
-    return "<replace-me>";
+    llvm::sys::path::replace_extension(outputPath, getExtension(swift::file_types::TY_SerializedDiagnostics));
+    break;
   }
-  llvm_unreachable("Fully covered switch above!");
+  return outputPath.str().str();
 }
 
 // Add search paths.
@@ -78,7 +84,7 @@ static std::vector<std::string> getClangDepScanningInvocationArguments(
       commandLineArgs.begin(), commandLineArgs.end(),
       "<swift-imported-modules>");
   assert(sourceFilePos != commandLineArgs.end());
-  if (sourceFileName.hasValue())
+  if (sourceFileName.has_value())
     *sourceFilePos = sourceFileName->str();
   else
     commandLineArgs.erase(sourceFilePos);
@@ -114,7 +120,6 @@ void ClangImporter::recordModuleDependencies(
     ModuleDependenciesCache &cache,
     const FullDependenciesResult &clangDependencies) {
   auto &ctx = Impl.SwiftContext;
-  auto currentSwiftSearchPathSet = ctx.getAllModuleSearchPathsSet();
 
   // This scanner invocation's already-captured APINotes version
   std::vector<std::string> capturedPCMArgs = {
@@ -127,7 +132,7 @@ void ClangImporter::recordModuleDependencies(
     // If we've already cached this information, we're done.
     if (cache.hasDependencies(
                     clangModuleDep.ID.ModuleName,
-                    {ModuleDependenciesKind::Clang, currentSwiftSearchPathSet}))
+                    ModuleDependenciesKind::Clang))
       continue;
 
     // File dependencies for this module.
@@ -153,6 +158,12 @@ void ClangImporter::recordModuleDependencies(
     swiftArgs.push_back("-emit-pcm");
     swiftArgs.push_back("-module-name");
     swiftArgs.push_back(clangModuleDep.ID.ModuleName);
+    
+    auto pcmPath = moduleCacheRelativeLookupModuleOutput(clangModuleDep.ID,
+                                                         ModuleOutputKind::ModuleFile,
+                                                         getModuleCachePathFromClang(getClangInstance()));
+    swiftArgs.push_back("-o");
+    swiftArgs.push_back(pcmPath);
 
     // Ensure that the resulting PCM build invocation uses Clang frontend directly
     swiftArgs.push_back("-direct-clang-cc1-module-build");
@@ -180,6 +191,7 @@ void ClangImporter::recordModuleDependencies(
     // Module-level dependencies.
     llvm::StringSet<> alreadyAddedModules;
     auto dependencies = ModuleDependencies::forClangModule(
+        pcmPath,
         clangModuleDep.ClangModuleMapFile,
         clangModuleDep.ID.ContextHash,
         swiftArgs,
@@ -198,11 +210,9 @@ Optional<ModuleDependencies> ClangImporter::getModuleDependencies(
     StringRef moduleName, ModuleDependenciesCache &cache,
     InterfaceSubContextDelegate &delegate) {
   auto &ctx = Impl.SwiftContext;
-  auto currentSwiftSearchPathSet = ctx.getAllModuleSearchPathsSet();
   // Check whether there is already a cached result.
   if (auto found = cache.findDependencies(
-          moduleName,
-          {ModuleDependenciesKind::Clang, currentSwiftSearchPathSet}))
+          moduleName, ModuleDependenciesKind::Clang))
     return found;
 
   // Determine the command-line arguments for dependency scanning.
@@ -228,6 +238,12 @@ Optional<ModuleDependencies> ClangImporter::getModuleDependencies(
     workingDir = *(clangWorkingDirPos - 1);
   }
 
+  auto moduleCachePath = getModuleCachePathFromClang(getClangInstance());
+  auto lookupModuleOutput = [moduleCachePath] (const ModuleID &MID,
+                                               ModuleOutputKind MOK) -> std::string {
+    return moduleCacheRelativeLookupModuleOutput(MID, MOK, moduleCachePath);
+  };
+
   auto clangDependencies = cache.getClangScannerTool().getFullDependencies(
       commandLineArgs, workingDir, cache.getAlreadySeenClangModules(),
       lookupModuleOutput, moduleName);
@@ -246,8 +262,7 @@ Optional<ModuleDependencies> ClangImporter::getModuleDependencies(
   // Record module dependencies for each module we found.
   recordModuleDependencies(cache, *clangDependencies);
             return cache.findDependencies(
-                    moduleName,
-                    {ModuleDependenciesKind::Clang, currentSwiftSearchPathSet});
+                    moduleName, ModuleDependenciesKind::Clang);
 }
 
 bool ClangImporter::addBridgingHeaderDependencies(
@@ -255,12 +270,7 @@ bool ClangImporter::addBridgingHeaderDependencies(
     ModuleDependenciesKind moduleKind,
     ModuleDependenciesCache &cache) {
   auto &ctx = Impl.SwiftContext;
-  auto currentSwiftSearchPathSet = ctx.getAllModuleSearchPathsSet();
-  
-  auto targetModule = *cache.findDependencies(
-              moduleName,
-              {moduleKind,
-               currentSwiftSearchPathSet});
+  auto targetModule = *cache.findDependencies(moduleName, moduleKind);
 
   // If we've already recorded bridging header dependencies, we're done.
   if (auto swiftInterfaceDeps = targetModule.getAsSwiftInterfaceModule()) {
@@ -283,6 +293,12 @@ bool ClangImporter::addBridgingHeaderDependencies(
     getClangDepScanningInvocationArguments(ctx, StringRef(bridgingHeader));
   std::string workingDir =
       ctx.SourceMgr.getFileSystem()->getCurrentWorkingDirectory().get();
+
+  auto moduleCachePath = getModuleCachePathFromClang(getClangInstance());
+  auto lookupModuleOutput = [moduleCachePath] (const ModuleID &MID,
+                                               ModuleOutputKind MOK) -> std::string {
+    return moduleCacheRelativeLookupModuleOutput(MID, MOK, moduleCachePath);
+  };
 
   auto clangDependencies = cache.getClangScannerTool().getFullDependencies(
       commandLineArgs, workingDir, cache.getAlreadySeenClangModules(),

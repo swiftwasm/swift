@@ -15,13 +15,15 @@
 // inference for expressions.
 //
 //===----------------------------------------------------------------------===//
+#include "swift/Sema/ConstraintSystem.h"
 #include "CSDiagnostics.h"
-#include "TypeChecker.h"
 #include "TypeCheckAvailability.h"
 #include "TypeCheckConcurrency.h"
+#include "TypeCheckMacros.h"
 #include "TypeCheckType.h"
-#include "swift/AST/Initializer.h"
+#include "TypeChecker.h"
 #include "swift/AST/GenericEnvironment.h"
+#include "swift/AST/Initializer.h"
 #include "swift/AST/ParameterList.h"
 #include "swift/AST/ProtocolConformance.h"
 #include "swift/AST/TypeCheckRequests.h"
@@ -29,7 +31,6 @@
 #include "swift/Basic/Statistic.h"
 #include "swift/Sema/CSFix.h"
 #include "swift/Sema/ConstraintGraph.h"
-#include "swift/Sema/ConstraintSystem.h"
 #include "swift/Sema/SolutionResult.h"
 #include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/SmallSet.h"
@@ -351,19 +352,19 @@ ConstraintSystem::getAlternativeLiteralTypes(KnownProtocolKind kind,
   return scratch;
 }
 
-bool ConstraintSystem::containsCodeCompletionLoc(ASTNode node) const {
+bool ConstraintSystem::containsIDEInspectionTarget(ASTNode node) const {
   SourceRange range = node.getSourceRange();
   if (range.isInvalid())
     return false;
-  return Context.SourceMgr.rangeContainsCodeCompletionLoc(range);
+  return Context.SourceMgr.rangeContainsIDEInspectionTarget(range);
 }
 
-bool ConstraintSystem::containsCodeCompletionLoc(
+bool ConstraintSystem::containsIDEInspectionTarget(
     const ArgumentList *args) const {
   SourceRange range = args->getSourceRange();
   if (range.isInvalid())
     return false;
-  return Context.SourceMgr.rangeContainsCodeCompletionLoc(range);
+  return Context.SourceMgr.rangeContainsIDEInspectionTarget(range);
 }
 
 ConstraintLocator *ConstraintSystem::getConstraintLocator(
@@ -1402,6 +1403,15 @@ unwrapPropertyWrapperParameterTypes(ConstraintSystem &cs, AbstractFunctionDecl *
     return functionType;
   }
 
+  // This transform is not applicable to pattern matching context.
+  //
+  // Note: If the transform is ever enabled for patterns - new branch
+  // would have to be added to `nameLoc` selection.
+  if (auto last = locator.last()) {
+    if (last->is<LocatorPathElt::PatternMatch>())
+      return functionType;
+  }
+
   auto *paramList = funcDecl->getParameters();
   auto paramTypes = functionType->getParams();
   SmallVector<AnyFunctionType::Param, 4> adjustedParamTypes;
@@ -1605,6 +1615,25 @@ ConstraintSystem::getTypeOfReference(ValueDecl *value,
     return { type, type, type, type };
   }
 
+  // Unqualified reference to a macro.
+  if (auto macro = dyn_cast<MacroDecl>(value)) {
+    Type macroType = macro->getInterfaceType();
+
+    // Open any the generic types.
+    OpenedTypeMap replacements;
+    openGeneric(macro->getParentModule(), macro->getGenericSignature(),
+                locator, replacements);
+
+    // If we opened up any type variables, record the replacements.
+    recordOpenedTypes(locator, replacements);
+
+    Type openedType = openType(macroType, replacements);
+
+    // FIXME: Should we use replaceParamErrorTypeByPlaceholder() here?
+
+    return { openedType, openedType, openedType, openedType };
+  }
+
   // Only remaining case: unqualified reference to a property.
   auto *varDecl = cast<VarDecl>(value);
 
@@ -1735,8 +1764,12 @@ TypeVariableType *ConstraintSystem::openGenericParameter(
   auto *paramLocator = getConstraintLocator(
       locator.withPathElement(LocatorPathElt::GenericParameter(parameter)));
 
-  auto typeVar = createTypeVariable(paramLocator, TVO_PrefersSubtypeBinding |
-                                                      TVO_CanBindToHole);
+  unsigned options = (TVO_PrefersSubtypeBinding |
+                      TVO_CanBindToHole);
+  if (parameter->isParameterPack())
+    options |= TVO_CanBindToPack;
+
+  auto typeVar = createTypeVariable(paramLocator, options);
   auto result = replacements.insert(std::make_pair(
       cast<GenericTypeParamType>(parameter->getCanonicalType()), typeVar));
 
@@ -1769,8 +1802,6 @@ void ConstraintSystem::openGenericRequirement(
 
   auto kind = req.getKind();
   switch (kind) {
-  case RequirementKind::SameCount:
-    llvm_unreachable("Same-count requirement not supported here");
   case RequirementKind::Conformance: {
     auto protoDecl = req.getProtocolDecl();
     // Determine whether this is the protocol 'Self' constraint we should
@@ -1784,6 +1815,7 @@ void ConstraintSystem::openGenericRequirement(
   }
   case RequirementKind::Superclass:
   case RequirementKind::SameType:
+  case RequirementKind::SameShape:
     openedReq = Requirement(kind, openedFirst, substFn(req.getSecondType()));
     break;
   case RequirementKind::Layout:
@@ -2424,8 +2456,9 @@ ConstraintSystem::getTypeOfMemberReference(
 
   // Adjust the opened type for concurrency.
   Type origOpenedType = openedType;
-  if ((isa<AbstractFunctionDecl>(value) || isa<EnumElementDecl>(value)) &&
-      !isRequirementOrWitness(locator)) {
+  if (isRequirementOrWitness(locator)) {
+    // Don't adjust when doing witness matching, because that can cause cycles.
+  } else if (isa<AbstractFunctionDecl>(value) || isa<EnumElementDecl>(value)) {
     unsigned numApplies = getNumApplications(
         value, hasAppliedSelf, functionRefKind);
     openedType = adjustFunctionTypeForConcurrency(
@@ -3443,7 +3476,7 @@ void ConstraintSystem::resolveOverload(ConstraintLocator *locator,
     // contains the completion location
     auto SE = getAsExpr<SubscriptExpr>(locator->getAnchor());
     if (!isForCodeCompletion() ||
-        (SE && !containsCodeCompletionLoc(SE->getArgs()))) {
+        (SE && !containsIDEInspectionTarget(SE->getArgs()))) {
       increaseScore(SK_KeyPathSubscript);
     }
     break;
@@ -3614,7 +3647,8 @@ Type ConstraintSystem::simplifyTypeImpl(Type type,
       if (auto selfType = lookupBaseType->getAs<DynamicSelfType>())
         lookupBaseType = selfType->getSelfType();
 
-      if (lookupBaseType->mayHaveMembers()) {
+      if (lookupBaseType->mayHaveMembers() ||
+          lookupBaseType->is<PackType>()) {
         auto *proto = assocType->getProtocol();
         auto conformance = DC->getParentModule()->lookupConformance(
           lookupBaseType, proto);
@@ -3638,9 +3672,8 @@ Type ConstraintSystem::simplifyTypeImpl(Type type,
           return memberTy;
         }
 
-        auto subs = SubstitutionMap::getProtocolSubstitutions(
-            proto, lookupBaseType, conformance);
-        auto result = assocType->getDeclaredInterfaceType().subst(subs);
+        auto result = conformance.getAssociatedType(
+            lookupBaseType, assocType->getDeclaredInterfaceType());
         if (!result->hasError())
           return result;
       }
@@ -3930,7 +3963,7 @@ SolutionResult ConstraintSystem::salvage() {
         int i = 0;
         for (auto &solution : viable) {
           log << "---Ambiguous solution #" << i++ << "---\n";
-          solution.dump(log);
+          solution.dump(log, solverState->getCurrentIndent());
           log << "\n";
         }
       }
@@ -4451,7 +4484,7 @@ static bool diagnoseAmbiguity(
       } else if (llvm::all_of(solution.Fixes, [&](ConstraintFix *fix) {
                    return fix->getLocator()
                        ->findLast<LocatorPathElt::ApplyArgument>()
-                       .hasValue();
+                       .has_value();
                  })) {
         // All fixes have to do with arguments, so let's show the parameter
         // lists.
@@ -4664,13 +4697,15 @@ bool ConstraintSystem::diagnoseAmbiguityWithFixes(
     return true;
 
   if (isDebugMode()) {
-    auto &log = llvm::errs();
+    auto indent = solverState->getCurrentIndent();
+    auto &log = llvm::errs().indent(indent);
     log << "--- Ambiguity: Considering #" << solutions.size()
         << " solutions with fixes ---\n";
     int i = 0;
     for (auto &solution : solutions) {
-      log << "\n--- Solution #" << i++ << "---\n";
-      solution.dump(log);
+      log << "\n";
+      log.indent(indent) << "--- Solution #" << i++ << "---\n";
+      solution.dump(log, indent);
       log << "\n";
     }
   }
@@ -5303,7 +5338,17 @@ void constraints::simplifyLocator(ASTNode &anchor,
       break;
 
     case ConstraintLocator::PackElement:
+    case ConstraintLocator::OpenedPackElement:
+    case ConstraintLocator::PackShape:
       break;
+
+    case ConstraintLocator::PackExpansionPattern: {
+      if (auto *expansion = getAsExpr<PackExpansionExpr>(anchor))
+        anchor = expansion->getPatternExpr();
+
+      path = path.slice(1);
+      break;
+    }
 
     case ConstraintLocator::PatternBindingElement: {
       auto pattern = path[0].castTo<LocatorPathElt::PatternBindingElement>();
@@ -6042,7 +6087,6 @@ ConstraintSystem::isConversionEphemeral(ConversionRestrictionKind conversion,
   case ConversionRestrictionKind::ObjCTollFreeBridgeToCF:
   case ConversionRestrictionKind::CGFloatToDouble:
   case ConversionRestrictionKind::DoubleToCGFloat:
-  case ConversionRestrictionKind::ReifyPackToType:
     // @_nonEphemeral has no effect on these conversions, so treat them as all
     // being non-ephemeral in order to allow their passing to an @_nonEphemeral
     // parameter.
@@ -6513,7 +6557,7 @@ void ConstraintSystem::diagnoseFailureFor(SolutionApplicationTarget target) {
 bool ConstraintSystem::isDeclUnavailable(const Decl *D,
                                          ConstraintLocator *locator) const {
   // First check whether this declaration is universally unavailable.
-  if (AvailableAttr::isUnavailable(D))
+  if (D->getAttrs().isUnavailable(getASTContext()))
     return true;
 
   return TypeChecker::isDeclarationUnavailable(D, DC, [&] {
@@ -6611,8 +6655,8 @@ static bool doesMemberHaveUnfulfillableConstraintsWithExistentialBase(
 
   for (const auto &req : sig.getRequirements()) {
     switch (req.getKind()) {
-    case RequirementKind::SameCount:
-      llvm_unreachable("Same-count requirement not supported here");
+    case RequirementKind::SameShape:
+      llvm_unreachable("Same-shape requirement not supported here");
 
     case RequirementKind::Superclass: {
       if (req.getFirstType()->getRootGenericParam()->getDepth() > 0 &&
@@ -6705,7 +6749,17 @@ SourceRange constraints::getSourceRange(ASTNode anchor) {
 
 static Optional<Requirement> getRequirement(ConstraintSystem &cs,
                                             ConstraintLocator *reqLocator) {
-  auto reqLoc = reqLocator->getLastElementAs<LocatorPathElt::AnyRequirement>();
+  ArrayRef<LocatorPathElt> path = reqLocator->getPath();
+
+  // If we have something like ... -> type req # -> pack element #, we're
+  // solving a requirement of the form T : P where T is a type parameter pack
+  if (!path.empty() && path.back().is<LocatorPathElt::PackElement>())
+    path = path.drop_back();
+
+  if (path.empty())
+    return None;
+
+  auto reqLoc = path.back().getAs<LocatorPathElt::AnyRequirement>();
   if (!reqLoc)
     return None;
 
@@ -6832,7 +6886,7 @@ bool ConstraintSystem::isReadOnlyKeyPathComponent(
     ExportContext where = ExportContext::forFunctionBody(DC, referenceLoc);
     auto maybeUnavail =
         TypeChecker::checkDeclarationAvailability(setter, where);
-    if (maybeUnavail.hasValue()) {
+    if (maybeUnavail.has_value()) {
       return true;
     }
   }
@@ -6886,6 +6940,9 @@ bool ConstraintSystem::isArgumentGenericFunction(Type argType, Expr *argExpr) {
 }
 
 bool ConstraintSystem::participatesInInference(ClosureExpr *closure) const {
+  if (getAppliedResultBuilderTransform(closure))
+    return true;
+
   if (closure->hasSingleExpressionBody())
     return true;
 

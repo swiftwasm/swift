@@ -980,6 +980,7 @@ Remangler::mangleDependentGenericConformanceRequirement(Node *node,
                                                         unsigned depth) {
   DEMANGLER_ASSERT(node->getNumChildren() == 2, node);
   Node *ProtoOrClass = node->getChild(1);
+  DEMANGLER_ASSERT(ProtoOrClass->hasChildren(), ProtoOrClass);
   if (ProtoOrClass->getFirstChild()->getKind() == Node::Kind::Protocol) {
     RETURN_IF_ERROR(manglePureProtocol(ProtoOrClass, depth + 1));
     auto Mangling = mangleConstrainedType(node->getChild(0), depth + 1);
@@ -1071,6 +1072,28 @@ Remangler::mangleDependentGenericSameTypeRequirement(Node *node,
   default:
     Buffer << "RT";
     break;
+  }
+  mangleDependentGenericParamIndex(NumMembersAndParamIdx.second);
+  return ManglingError::Success;
+}
+
+ManglingError
+Remangler::mangleDependentGenericSameShapeRequirement(Node *node,
+                                                      unsigned depth) {
+  RETURN_IF_ERROR(mangleChildNode(node, 1, depth + 1));
+  auto Mangling = mangleConstrainedType(node->getChild(0), depth + 1);
+  if (!Mangling.isSuccess())
+    return Mangling.error();
+  auto NumMembersAndParamIdx = Mangling.result();
+  DEMANGLER_ASSERT(
+      NumMembersAndParamIdx.first < 0 || NumMembersAndParamIdx.second, node);
+  switch (NumMembersAndParamIdx.first) {
+  case 0:
+    Buffer << "Rh";
+    break;
+  default:
+    assert(false && "Invalid same-shape requirement");
+    return ManglingError::AssertionFailed;
   }
   mangleDependentGenericParamIndex(NumMembersAndParamIdx.second);
   return ManglingError::Success;
@@ -1669,6 +1692,7 @@ ManglingError Remangler::mangleGlobal(Node *node, unsigned depth) {
       case Node::Kind::AccessibleFunctionRecord:
       case Node::Kind::BackDeploymentThunk:
       case Node::Kind::BackDeploymentFallback:
+      case Node::Kind::HasSymbolQuery:
         mangleInReverseOrder = true;
         break;
       default:
@@ -2239,6 +2263,18 @@ ManglingError Remangler::mangleNonObjCAttribute(Node *node, unsigned depth) {
 ManglingError Remangler::mangleTuple(Node *node, unsigned depth) {
   RETURN_IF_ERROR(mangleTypeList(node, depth + 1));
   Buffer << 't';
+  return ManglingError::Success;
+}
+
+ManglingError Remangler::manglePack(Node *node, unsigned depth) {
+  RETURN_IF_ERROR(mangleTypeList(node, depth + 1));
+  Buffer << "QP";
+  return ManglingError::Success;
+}
+
+ManglingError Remangler::manglePackExpansion(Node *node, unsigned depth) {
+  RETURN_IF_ERROR(mangleChildNodes(node, depth + 1));
+  Buffer << "Qp";
   return ManglingError::Success;
 }
 
@@ -2824,6 +2860,12 @@ ManglingError Remangler::mangleSubscript(Node *node, unsigned depth) {
   return mangleAbstractStorage(node, "p", depth + 1);
 }
 
+ManglingError Remangler::mangleMacro(Node *node, unsigned depth) {
+  RETURN_IF_ERROR(mangleChildNodes(node, depth + 1));
+  Buffer << "fm";
+  return ManglingError::Success;
+}
+
 ManglingError Remangler::mangleSuffix(Node *node, unsigned depth) {
   // Just add the suffix back on.
   Buffer << node->getText();
@@ -3363,6 +3405,7 @@ ManglingError Remangler::mangleOpaqueType(Node *node, unsigned depth) {
   if (trySubstitution(node, entry))
     return ManglingError::Success;
 
+  DEMANGLER_ASSERT(node->getNumChildren() >= 3, node);
   RETURN_IF_ERROR(mangle(node->getChild(0), depth + 1));
   auto boundGenerics = node->getChild(2);
   for (unsigned i = 0; i < boundGenerics->getNumChildren(); ++i) {
@@ -3500,6 +3543,11 @@ ManglingError Remangler::mangleExtendedExistentialTypeShape(Node *node,
   else
     Buffer << "Xg";
 
+  return ManglingError::Success;
+}
+
+ManglingError Remangler::mangleHasSymbolQuery(Node *node, unsigned depth) {
+  Buffer << "TwS";
   return ManglingError::Success;
 }
 

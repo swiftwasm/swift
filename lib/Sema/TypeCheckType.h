@@ -70,6 +70,12 @@ enum class TypeResolutionFlags : uint16_t {
 
   /// We are in a `@preconcurrency` declaration.
   Preconcurrency = 1 << 10,
+
+  /// Whether references to type parameter packs are allowed.
+  ///
+  /// Pack references are only allowed inside pack expansions
+  /// and in generic requirements.
+  AllowPackReferences = 1 << 11,
 };
 
 /// Type resolution contexts that require special handling.
@@ -130,6 +136,9 @@ enum class TypeResolverContext : uint8_t {
 
   /// Whether this type is the value carried in an enum case.
   EnumElementDecl,
+
+  /// Whether this type is a part of a macro declaration.
+  MacroDecl,
 
   /// Whether this is the payload subpattern of an enum pattern.
   EnumPatternPayload,
@@ -251,6 +260,7 @@ public:
     case Context::ExtensionBinding:
     case Context::SubscriptDecl:
     case Context::EnumElementDecl:
+    case Context::MacroDecl:
     case Context::EnumPatternPayload:
     case Context::TypeAliasDecl:
     case Context::GenericTypeAliasDecl:
@@ -300,6 +310,7 @@ public:
     case Context::FunctionResult:
     case Context::SubscriptDecl:
     case Context::EnumElementDecl:
+    case Context::MacroDecl:
     case Context::EnumPatternPayload:
     case Context::SameTypeRequirement:
     case Context::ProtocolMetatypeBase:
@@ -311,12 +322,18 @@ public:
   }
 
   /// Whether pack expansion types are supported in this context.
-  bool isPackExpansionSupported() const {
+  bool isPackExpansionSupported(DeclContext *dc) const {
     switch (context) {
     case Context::FunctionInput:
+    case Context::VariadicFunctionInput:
     case Context::TupleElement:
     case Context::GenericArgument:
       return true;
+
+    // Local variable packs are supported, but property packs
+    // are not.
+    case Context::PatternBindingDecl:
+      return !dc->isTypeContext();
 
     case Context::None:
     case Context::ProtocolGenericArgument:
@@ -332,14 +349,13 @@ public:
     case Context::InExpression:
     case Context::ExplicitCastExpr:
     case Context::ForEachStmt:
-    case Context::PatternBindingDecl:
     case Context::EditorPlaceholderExpr:
     case Context::ClosureExpr:
-    case Context::VariadicFunctionInput:
     case Context::InoutFunctionInput:
     case Context::FunctionResult:
     case Context::SubscriptDecl:
     case Context::EnumElementDecl:
+    case Context::MacroDecl:
     case Context::EnumPatternPayload:
     case Context::SameTypeRequirement:
     case Context::ProtocolMetatypeBase:
@@ -382,6 +398,7 @@ public:
     case Context::FunctionResult:
     case Context::SubscriptDecl:
     case Context::EnumElementDecl:
+    case Context::MacroDecl:
     case Context::EnumPatternPayload:
     case Context::ProtocolMetatypeBase:
     case Context::ImmediateOptionalTypeArgument:

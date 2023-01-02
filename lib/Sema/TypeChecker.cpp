@@ -146,7 +146,7 @@ ProtocolDecl *TypeChecker::getLiteralProtocol(ASTContext &Context, Expr *expr) {
   case ObjectLiteralExpr::Name:                                                \
     return TypeChecker::getProtocol(Context, expr->getLoc(),                   \
                                     KnownProtocolKind::Protocol);
-#include "swift/Syntax/TokenKinds.def"
+#include "swift/AST/TokenKinds.def"
     }
   }
 
@@ -212,8 +212,10 @@ void swift::bindExtensions(ModuleDecl &mod) {
           worklist.push_back(ED);;
     };
 
-    for (auto *D : SF->getTopLevelDecls())
-      visitTopLevelDecl(D);
+    for (auto item : SF->getTopLevelItems()) {
+      if (auto D = item.dyn_cast<Decl *>())
+        visitTopLevelDecl(D);
+    }
 
     for (auto *D : SF->getHoistedDecls())
       visitTopLevelDecl(D);
@@ -266,6 +268,7 @@ static void diagnoseUnnecessaryPreconcurrencyImports(SourceFile &sf) {
 
   case SourceFileKind::Library:
   case SourceFileKind::Main:
+  case SourceFileKind::MacroExpansion:
     break;
   }
 
@@ -366,6 +369,7 @@ void swift::performWholeModuleTypeChecking(SourceFile &SF) {
   switch (SF.Kind) {
   case SourceFileKind::Library:
   case SourceFileKind::Main:
+  case SourceFileKind::MacroExpansion:
     diagnoseObjCMethodConflicts(SF);
     diagnoseObjCUnsatisfiedOptReqConflicts(SF);
     diagnoseUnintendedObjCMethodOverrides(SF);
@@ -406,6 +410,7 @@ void swift::loadDerivativeConfigurations(SourceFile &SF) {
 
   switch (SF.Kind) {
   case SourceFileKind::Library:
+  case SourceFileKind::MacroExpansion:
   case SourceFileKind::Main: {
     DerivativeFinder finder;
     SF.walkContext(finder);
@@ -544,6 +549,11 @@ bool swift::typeCheckForCodeCompletion(
     llvm::function_ref<void(const constraints::Solution &)> callback) {
   return TypeChecker::typeCheckForCodeCompletion(target, needsPrecheck,
                                                  callback);
+}
+
+Expr *swift::resolveDeclRefExpr(UnresolvedDeclRefExpr *UDRE, DeclContext *Context,
+                                bool replaceInvalidRefsWithErrors) {
+  return TypeChecker::resolveDeclRefExpr(UDRE, Context, replaceInvalidRefsWithErrors);
 }
 
 void TypeChecker::checkForForbiddenPrefix(ASTContext &C, DeclBaseName Name) {

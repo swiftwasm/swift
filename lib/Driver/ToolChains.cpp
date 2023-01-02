@@ -261,6 +261,7 @@ void ToolChain::addCommonFrontendArgs(const OutputInfo &OI,
   inputArgs.AddLastArg(arguments, options::OPT_Rpass_EQ);
   inputArgs.AddLastArg(arguments, options::OPT_Rpass_missed_EQ);
   inputArgs.AddLastArg(arguments, options::OPT_suppress_warnings);
+  inputArgs.AddLastArg(arguments, options::OPT_suppress_remarks);
   inputArgs.AddLastArg(arguments, options::OPT_profile_generate);
   inputArgs.AddLastArg(arguments, options::OPT_profile_use);
   inputArgs.AddLastArg(arguments, options::OPT_profile_coverage_mapping);
@@ -301,6 +302,7 @@ void ToolChain::addCommonFrontendArgs(const OutputInfo &OI,
   inputArgs.AddLastArg(arguments, options::OPT_library_level);
   inputArgs.AddLastArg(arguments, options::OPT_enable_bare_slash_regex);
   inputArgs.AddLastArg(arguments, options::OPT_enable_experimental_cxx_interop);
+  inputArgs.AddLastArg(arguments, options::OPT_load_plugin_library);
 
   // Pass on any build config options
   inputArgs.AddAllArgs(arguments, options::OPT_D);
@@ -359,7 +361,7 @@ static void addRuntimeLibraryFlags(const OutputInfo &OI,
   if (!OI.RuntimeVariant)
     return;
 
-  const OutputInfo::MSVCRuntime RT = OI.RuntimeVariant.getValue();
+  const OutputInfo::MSVCRuntime RT = OI.RuntimeVariant.value();
 
   Arguments.push_back("-autolink-library");
   Arguments.push_back("oldnames");
@@ -618,7 +620,8 @@ ToolChain::constructInvocation(const CompileJobAction &job,
     context.Args.AddLastArg(Arguments, options::OPT_emit_symbol_graph_dir);
   }
   context.Args.AddLastArg(Arguments, options::OPT_include_spi_symbols);
-  context.Args.AddLastArg(Arguments, options::OPT_emit_extension_block_symbols);
+  context.Args.AddLastArg(Arguments, options::OPT_emit_extension_block_symbols,
+                          options::OPT_omit_extension_block_symbols);
   context.Args.AddLastArg(Arguments, options::OPT_symbol_graph_minimum_access_level);
 
   return II;
@@ -1115,7 +1118,8 @@ ToolChain::constructInvocation(const MergeModuleJobAction &job,
   context.Args.AddLastArg(Arguments, options::OPT_emit_symbol_graph);
   context.Args.AddLastArg(Arguments, options::OPT_emit_symbol_graph_dir);
   context.Args.AddLastArg(Arguments, options::OPT_include_spi_symbols);
-  context.Args.AddLastArg(Arguments, options::OPT_emit_extension_block_symbols);
+  context.Args.AddLastArg(Arguments, options::OPT_emit_extension_block_symbols,
+                          options::OPT_omit_extension_block_symbols);
   context.Args.AddLastArg(Arguments, options::OPT_symbol_graph_minimum_access_level);
 
   context.Args.AddLastArg(Arguments, options::OPT_import_objc_header);
@@ -1386,7 +1390,7 @@ void ToolChain::addPathEnvironmentVariableIfNeeded(
   }
   if (auto currentPaths = llvm::sys::Process::GetEnv(name)) {
     newPaths.append(separator);
-    newPaths.append(currentPaths.getValue());
+    newPaths.append(currentPaths.value());
   }
   env.emplace_back(name, args.MakeArgString(newPaths));
 }

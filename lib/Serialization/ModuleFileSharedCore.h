@@ -88,6 +88,9 @@ class ModuleFileSharedCore {
   /// \c true if this module was compiled with -enable-ossa-modules.
   bool RequiresOSSAModules;
 
+  /// An array of module names that are allowed to import this one.
+  ArrayRef<StringRef> AllowableClientNames;
+
 public:
   /// Represents another module that has been imported as a dependency.
   class Dependency {
@@ -148,16 +151,11 @@ private:
   /// All modules this module depends on.
   SmallVector<Dependency, 8> Dependencies;
 
-  struct SearchPath {
-    std::string Path;
-    bool IsFramework;
-    bool IsSystem;
-  };
   /// Search paths this module may provide.
   ///
   /// This is not intended for use by frameworks, but may show up in debug
   /// modules.
-  std::vector<SearchPath> SearchPaths;
+  std::vector<serialization::SearchPath> SearchPaths;
 
   /// Info for the (lone) imported header for this module.
   struct {
@@ -347,6 +345,10 @@ private:
     /// Discriminator for resilience strategy.
     unsigned ResilienceStrategy : 2;
 
+    /// Whether the module was rebuilt from a module interface instead of being
+    /// build from the full source.
+    unsigned IsBuiltFromInterface: 1;
+
     /// Whether this module is compiled with implicit dynamic.
     unsigned IsImplicitDynamicEnabled: 1;
 
@@ -357,7 +359,7 @@ private:
     unsigned IsConcurrencyChecked: 1;
 
     // Explicitly pad out to the next word boundary.
-    unsigned : 5;
+    unsigned : 4;
   } Bits = {};
   static_assert(sizeof(ModuleBits) <= 8, "The bit set should be small");
 

@@ -1058,6 +1058,11 @@ ManglingError Remangler::mangleSubscript(Node *node, EntityContext &ctx,
   return ManglingError::Success;
 }
 
+ManglingError Remangler::mangleMacro(Node *node, unsigned depth) {
+  Buffer << "fm";
+  return mangleChildNodes(node, depth + 1);
+}
+
 ManglingError Remangler::mangleAccessor(Node *storageNode,
                                         StringRef accessorCode,
                                         EntityContext &ctx, unsigned depth) {
@@ -1860,6 +1865,14 @@ ManglingError Remangler::mangleTupleElementName(Node *node, unsigned depth) {
   return mangleIdentifier(node->getText(), OperatorKind::NotOperator);
 }
 
+ManglingError Remangler::manglePack(Node *node, unsigned depth) {
+  return MANGLING_ERROR(ManglingError::UnsupportedNodeKind, node);
+}
+
+ManglingError Remangler::manglePackExpansion(Node *node, unsigned depth) {
+  return MANGLING_ERROR(ManglingError::UnsupportedNodeKind, node);
+}
+
 ManglingError Remangler::mangleDependentGenericType(Node *node,
                                                     unsigned depth) {
   Buffer << 'u';
@@ -1936,6 +1949,12 @@ Remangler::mangleDependentGenericSameTypeRequirement(Node *node,
   RETURN_IF_ERROR(mangleConstrainedType(node->getChild(0), depth + 1));
   Buffer << 'z';
   return mangle(node->getChild(1), depth + 1);
+}
+
+ManglingError
+Remangler::mangleDependentGenericSameShapeRequirement(Node *node,
+                                                      unsigned depth) {
+  return MANGLING_ERROR(ManglingError::UnsupportedNodeKind, node);
 }
 
 ManglingError
@@ -2852,5 +2871,10 @@ ManglingError Remangler::mangleBackDeploymentThunk(Node *node, unsigned depth) {
 ManglingError Remangler::mangleBackDeploymentFallback(Node *node,
                                                       unsigned depth) {
   Buffer << "TwB";
+  return ManglingError::Success;
+}
+
+ManglingError Remangler::mangleHasSymbolQuery(Node *node, unsigned depth) {
+  Buffer << "TwS";
   return ManglingError::Success;
 }

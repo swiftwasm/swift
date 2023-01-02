@@ -97,6 +97,9 @@ public:
   /// User-defined module version number.
   llvm::VersionTuple UserModuleVersion;
 
+  /// A set of modules allowed to import this module.
+  std::set<std::string> AllowableClients;
+
   /// Emit index data for imported serialized swift system modules.
   bool IndexSystemModules = false;
 
@@ -126,7 +129,6 @@ public:
     Typecheck,         ///< Parse and type-check only
     DumpParse,         ///< Parse only and dump AST
     DumpInterfaceHash, ///< Parse and dump the interface token hash.
-    EmitSyntax,        ///< Parse and dump Syntax tree as JSON
     DumpAST,           ///< Parse, type-check, and dump AST
     PrintAST,          ///< Parse, type-check, and pretty-print AST
     PrintASTDecl,      ///< Parse, type-check, and pretty-print AST declarations
@@ -345,6 +347,11 @@ public:
   /// are errors. The resulting serialized AST may include errors types and
   /// skip nodes entirely, depending on the errors involved.
   bool AllowModuleWithCompilerErrors = false;
+  
+  /// Whether or not the compiler must be strict in ensuring that implicit downstream
+  /// module dependency build tasks must inherit the parent compiler invocation's context,
+  /// such as `-Xcc` flags, etc.
+  bool StrictImplicitModuleContext = false;
 
   /// Downgrade all errors emitted in the module interface verification phase
   /// to warnings.
@@ -423,6 +430,12 @@ public:
     return llvm::hash_value(0);
   }
 
+  /// Return a hash code of any components from these options that should
+  /// contribute to a Swift Dependency Scanning hash.
+  llvm::hash_code getModuleScanningHashComponents() const {
+    return llvm::hash_value(0);
+  }
+
   StringRef determineFallbackModuleName() const;
 
   bool isCompilingExactlyOneSwiftFile() const {
@@ -477,6 +490,10 @@ public:
   /// This should only be used as a workaround when emitting ABI descriptor files
   /// crashes the compiler.
   bool emptyABIDescriptor = false;
+
+  /// Augment modular imports in any emitted ObjC headers with equivalent
+  /// textual imports
+  bool EmitClangHeaderWithNonModularIncludes = false;
 
 private:
   static bool canActionEmitDependencies(ActionType);

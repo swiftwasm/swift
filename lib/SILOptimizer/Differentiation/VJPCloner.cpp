@@ -396,10 +396,10 @@ public:
       return;
     }
     // If callee is `array.uninitialized_intrinsic`, do standard cloning.
-    // `array.unininitialized_intrinsic` differentiation is handled separately.
+    // `array.uninitialized_intrinsic` differentiation is handled separately.
     if (ArraySemanticsCall(ai, semantics::ARRAY_UNINITIALIZED_INTRINSIC)) {
       LLVM_DEBUG(getADDebugStream()
-                 << "Cloning `array.unininitialized_intrinsic` `apply`:\n"
+                 << "Cloning `array.uninitialized_intrinsic` `apply`:\n"
                  << *ai << '\n');
       TypeSubstCloner::visitApplyInst(ai);
       return;
@@ -854,7 +854,6 @@ SILFunction *VJPCloner::Implementation::createEmptyPullback() {
       break;
     case ParameterConvention::Indirect_In:
     case ParameterConvention::Indirect_Inout:
-    case ParameterConvention::Indirect_In_Constant:
     case ParameterConvention::Indirect_In_Guaranteed:
     case ParameterConvention::Indirect_InoutAliasable:
       conv = ResultConvention::Indirect;

@@ -493,10 +493,7 @@ void ClosureCloner::populateCloned() {
       // Simply create a new argument which copies the original argument
       auto *mappedValue = clonedEntryBB->createFunctionArgument(
           (*ai)->getType(), (*ai)->getDecl());
-      mappedValue->setNoImplicitCopy(
-          cast<SILFunctionArgument>(*ai)->isNoImplicitCopy());
-      mappedValue->setLifetimeAnnotation(
-          cast<SILFunctionArgument>(*ai)->getLifetimeAnnotation());
+      mappedValue->copyFlags(cast<SILFunctionArgument>(*ai));
       entryArgs.push_back(mappedValue);
       continue;
     }
@@ -510,10 +507,7 @@ void ClosureCloner::populateCloned() {
                        .getObjectType();
     auto *newArg =
         clonedEntryBB->createFunctionArgument(boxedTy, (*ai)->getDecl());
-    newArg->setNoImplicitCopy(
-        cast<SILFunctionArgument>(*ai)->isNoImplicitCopy());
-    newArg->setLifetimeAnnotation(
-        cast<SILFunctionArgument>(*ai)->getLifetimeAnnotation());
+    newArg->copyFlags(cast<SILFunctionArgument>(*ai));
     SILValue mappedValue = newArg;
 
     // If SIL ownership is enabled, we need to perform a borrow here if we have
@@ -1649,7 +1643,7 @@ void CapturePromotionPass::processFunction(
         processPartialApplyInst(funcBuilder, pai, indicesPair.second, worklist);
     (void)clonedFn;
   }
-  invalidateAnalysis(func, SILAnalysis::InvalidationKind::Everything);
+  invalidateAnalysis(func, SILAnalysis::InvalidationKind::FunctionBody);
 }
 
 SILTransform *swift::createCapturePromotion() {

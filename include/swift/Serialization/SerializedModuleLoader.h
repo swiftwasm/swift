@@ -137,7 +137,7 @@ protected:
   }
 
   /// Scan the given serialized module file to determine dependencies.
-  llvm::ErrorOr<ModuleDependencies> scanModuleFile(Twine modulePath);
+  llvm::ErrorOr<ModuleDependencies> scanModuleFile(Twine modulePath, bool isFramework);
 
   /// Load the module file into a buffer and also collect its module name.
   static std::unique_ptr<llvm::MemoryBuffer>
@@ -185,7 +185,8 @@ public:
   /// emits a diagnostic and returns a FailedImportModule object.
   virtual ModuleDecl *
   loadModule(SourceLoc importLoc,
-             ImportPath::Module path) override;
+             ImportPath::Module path,
+             bool AllowMemoryCache) override;
 
 
   virtual void loadExtensions(NominalTypeDecl *nominal,
@@ -294,7 +295,8 @@ public:
 
   ModuleDecl *
   loadModule(SourceLoc importLoc,
-             ImportPath::Module path) override;
+             ImportPath::Module path,
+             bool AllowMemoryCache = true) override;
 
   /// Register a memory buffer that contains the serialized module for the given
   /// access path. This API is intended to be used by LLDB to add swiftmodules
@@ -448,6 +450,8 @@ public:
   Identifier getDiscriminatorForPrivateValue(const ValueDecl *D) const override;
 
   virtual StringRef getFilename() const override;
+
+  virtual StringRef getLoadedFilename() const override;
 
   virtual StringRef getModuleDefiningPath() const override;
 
