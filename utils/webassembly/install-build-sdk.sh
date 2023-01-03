@@ -21,7 +21,7 @@ install_icu() {
 }
 
 install_wasi-sysroot() {
-  WASI_SYSROOT_URL="https://github.com/swiftwasm/wasi-sdk-build/releases/download/wasi-sdk-14%2Bswiftwasm-2022-03-13/wasi-sysroot.tar.gz"
+  WASI_SYSROOT_URL="https://github.com/swiftwasm/wasi-sdk-build/releases/download/wasi-sdk-16%2Bswiftwasm-2023-01-03/wasi-sysroot.tar.gz"
 
   curl -L "$WASI_SYSROOT_URL" | tar xz
 
