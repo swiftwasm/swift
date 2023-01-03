@@ -5811,7 +5811,19 @@ ASTContext::SILTransformCtors ASTContext::getIRGenSILTransforms() const {
 }
 
 std::string ASTContext::getEntryPointFunctionName() const {
-  return LangOpts.entryPointFunctionName;
+  // If -entry-point-function-name was specified, use that.
+  if (auto entryPointName = LangOpts.entryPointFunctionName)
+    return entryPointName.getValue();
+
+  // Otherwise, use the platform-specific default entry point name.
+  switch (LangOpts.Target.getArch()) {
+  case llvm::Triple::wasm32:
+    // The WebAssembly entry point with argc/argv is distinguished from `int main(void)` by name
+    // https://github.com/WebAssembly/tool-conventions/blob/main/BasicCABI.md#user-entrypoint
+    return "__main_argc_argv";
+  default:
+    return "main";
+  }
 }
 
 SILLayout *SILLayout::get(ASTContext &C,
