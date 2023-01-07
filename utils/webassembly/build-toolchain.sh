@@ -140,15 +140,11 @@ build_target_toolchain() {
     -D SWIFT_ENABLE_EXPERIMENTAL_DIFFERENTIABLE_PROGRAMMING=YES \
     -D SWIFT_ENABLE_EXPERIMENTAL_DISTRIBUTED=YES \
     -D SWIFT_ENABLE_EXPERIMENTAL_STRING_PROCESSING=YES \
-    -D SWIFT_PATH_TO_SWIFT_SYNTAX_SOURCE="$SOURCE_PATH/swift-syntax" \
-    -D SWIFT_PATH_TO_STRING_PROCESSING_SOURCE="$SOURCE_PATH/swift-experimental-string-processing" \
+    -D EXPERIMENTAL_STRING_PROCESSING_SOURCE_DIR="$SOURCE_PATH/swift-experimental-string-processing" \
     -G Ninja \
     -S "$SOURCE_PATH/swift"
 
-  # FIXME(katei): 'sdk-overlay' is explicitly used to build libcxxshim.modulemap
-  # which is used only in tests, so 'ninja install' doesn't build it
-  # the header and modulemap custom targets should be added as dependency of install
-  ninja sdk-overlay install -C "$SWIFT_STDLIB_BUILD_DIR"
+  ninja install -C "$SWIFT_STDLIB_BUILD_DIR"
 
   # Link compiler-rt libs to stdlib build dir
   mkdir -p "$SWIFT_STDLIB_BUILD_DIR/lib/clang/10.0.0/"
