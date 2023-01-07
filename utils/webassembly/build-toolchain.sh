@@ -36,6 +36,7 @@ case $(uname -s) in
 esac
 
 BUILD_HOST_TOOLCHAIN=1
+TOOLCHAIN_CHANNEL=${TOOLCHAIN_CHANNEL:-DEVELOPMENT}
 
 while [ $# -ne 0 ]; do
   case "$1" in
@@ -53,9 +54,9 @@ done
 YEAR=$(date +"%Y")
 MONTH=$(date +"%m")
 DAY=$(date +"%d")
-TOOLCHAIN_NAME="swift-wasm-5.7-SNAPSHOT-${YEAR}-${MONTH}-${DAY}-a"
+TOOLCHAIN_NAME="swift-wasm-${TOOLCHAIN_CHANNEL}-SNAPSHOT-${YEAR}-${MONTH}-${DAY}-a"
 
-PACKAGE_ARTIFACT="$SOURCE_PATH/swift-wasm-5.7-SNAPSHOT-${OS_SUFFIX}.tar.gz"
+PACKAGE_ARTIFACT="$SOURCE_PATH/swift-wasm-${TOOLCHAIN_CHANNEL}-SNAPSHOT-${OS_SUFFIX}.tar.gz"
 
 HOST_TOOLCHAIN_DESTDIR=$SOURCE_PATH/host-toolchain-sdk
 DIST_TOOLCHAIN_DESTDIR=$SOURCE_PATH/dist-toolchain-sdk
@@ -139,11 +140,15 @@ build_target_toolchain() {
     -D SWIFT_ENABLE_EXPERIMENTAL_DIFFERENTIABLE_PROGRAMMING=YES \
     -D SWIFT_ENABLE_EXPERIMENTAL_DISTRIBUTED=YES \
     -D SWIFT_ENABLE_EXPERIMENTAL_STRING_PROCESSING=YES \
-    -D EXPERIMENTAL_STRING_PROCESSING_SOURCE_DIR="$SOURCE_PATH/swift-experimental-string-processing" \
+    -D SWIFT_PATH_TO_SWIFT_SYNTAX_SOURCE="$SOURCE_PATH/swift-syntax" \
+    -D SWIFT_PATH_TO_STRING_PROCESSING_SOURCE="$SOURCE_PATH/swift-experimental-string-processing" \
     -G Ninja \
     -S "$SOURCE_PATH/swift"
 
-  ninja install -C "$SWIFT_STDLIB_BUILD_DIR"
+  # FIXME(katei): 'sdk-overlay' is explicitly used to build libcxxshim.modulemap
+  # which is used only in tests, so 'ninja install' doesn't build it
+  # the header and modulemap custom targets should be added as dependency of install
+  ninja sdk-overlay install -C "$SWIFT_STDLIB_BUILD_DIR"
 
   # Link compiler-rt libs to stdlib build dir
   mkdir -p "$SWIFT_STDLIB_BUILD_DIR/lib/clang/10.0.0/"
@@ -168,11 +173,15 @@ embed_wasi_sysroot() {
   rm "$DIST_TOOLCHAIN_SDK/usr/lib/swift_static/wasi/wasm32/wasi.modulemap.bak"
 }
 
+swift_version() {
+  cat "$SOURCE_PATH/swift/CMakeLists.txt" | grep 'set(SWIFT_VERSION ' | sed -E 's/set\(SWIFT_VERSION "(.+)"\)/\1/'
+}
+
 create_darwin_info_plist() {
   echo "-- Create Info.plist --"
   PLISTBUDDY_BIN="/usr/libexec/PlistBuddy"
 
-  DARWIN_TOOLCHAIN_VERSION="5.7.${YEAR}${MONTH}${DAY}"
+  DARWIN_TOOLCHAIN_VERSION="$(swift_version).${YEAR}${MONTH}${DAY}"
   BUNDLE_PREFIX="org.swiftwasm"
   DARWIN_TOOLCHAIN_BUNDLE_IDENTIFIER="${BUNDLE_PREFIX}.${YEAR}${MONTH}${DAY}"
   DARWIN_TOOLCHAIN_DISPLAY_NAME_SHORT="Swift for WebAssembly Snapshot"
@@ -208,14 +217,35 @@ create_darwin_info_plist() {
   chmod a+r "${DARWIN_TOOLCHAIN_INFO_PLIST}"
 }
 
+show_sccache_stats() {
+  # If sccache is installed in PATH
+  if command -v sccache &> /dev/null; then
+    sccache --show-stats
+  else
+    echo "sccache is not installed in PATH"
+  fi
+}
+
 if [ ${BUILD_HOST_TOOLCHAIN} -eq 1 ]; then
   build_host_toolchain
+  echo "=================================="
+  echo "Host toolchain built successfully!"
+  echo "=================================="
+  echo ""
+  echo "sccache stats:"
+  show_sccache_stats
   rm -rf "$DIST_TOOLCHAIN_DESTDIR"
   mkdir -p "$DIST_TOOLCHAIN_SDK"
   rsync -a "$HOST_TOOLCHAIN_DESTDIR/" "$DIST_TOOLCHAIN_SDK"
 fi
 
 build_target_toolchain
+echo "===================================="
+echo "Target toolchain built successfully!"
+echo "===================================="
+echo ""
+echo "sccache stats:"
+show_sccache_stats
 
 embed_wasi_sysroot
 
