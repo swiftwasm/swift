@@ -96,8 +96,6 @@ jobs:
         if: ${{ matrix.free_disk_space }}
         run: |
           df -h
-          sudo swapoff -a
-          sudo rm -f /swapfile
           sudo rm -rf /opt/hostedtoolcache
           sudo rm -rf /usr/share/dotnet
           sudo apt clean
