@@ -77,7 +77,7 @@ jobs:
 
   build-toolchain:
     env:
-      TOOLCHAIN_CHANNEL: DEVELOPMENT
+      TOOLCHAIN_CHANNEL: 5.7
       DEVELOPER_DIR: /Applications/Xcode_13.2.1.app/Contents/Developer/
       # https://github.com/actions/cache/blob/main/tips-and-workarounds.md#cache-segment-restore-timeout
       SEGMENT_DOWNLOAD_TIMEOUT_MINS: 30
