@@ -52,6 +52,7 @@ namespace swift {
   class SourceManager;
   class TupleType;
   class TypeLoc;
+  class UUID;
   
   struct EnumElementInfo;
 
@@ -1018,6 +1019,11 @@ public:
   parseExtendedAvailabilitySpecList(SourceLoc AtLoc, SourceLoc AttrLoc,
                                     StringRef AttrName);
 
+  /// Parse a string literal whose contents can be interpreted as a UUID.
+  ///
+  /// \returns false on success, true on error.
+  bool parseUUIDString(UUID &uuid, Diag<> diag);
+
   /// Parse the Objective-C selector inside @objc
   void parseObjCSelector(SmallVector<Identifier, 4> &Names,
                          SmallVector<SourceLoc, 4> &NameLocs,
@@ -1089,6 +1095,10 @@ public:
   /// Parse a single argument from a @_documentation attribute.
   bool parseDocumentationAttributeArgument(Optional<StringRef> &Metadata,
                                            Optional<AccessLevel> &Visibility);
+
+  /// Parse the @declaration attribute.
+  ParserResult<DeclarationAttr> parseDeclarationAttribute(SourceLoc AtLoc,
+                                                          SourceLoc Loc);
 
   /// Parse a specific attribute.
   ParserStatus parseDeclAttribute(DeclAttributes &Attributes, SourceLoc AtLoc,

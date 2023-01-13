@@ -162,12 +162,14 @@ extern "C" void parseTopLevelSwift(const char *buffer,
                                    void *outputContext,
                                    void (*)(void *, void *));
 
+#if SWIFT_SWIFT_PARSER
 static void appendToVector(void *declPtr, void *vecPtr) {
   auto vec = static_cast<SmallVectorImpl<ASTNode> *>(vecPtr);
   auto decl = static_cast<Decl *>(declPtr);
 
   vec->push_back(decl);
 }
+#endif
 
 /// Parse a source file.
 extern "C" void *swift_ASTGen_parseSourceFile(const char *buffer,
@@ -2132,6 +2134,40 @@ Parser::parseDocumentationAttribute(SourceLoc AtLoc, SourceLoc Loc) {
   return makeParserResult(new (Context) DocumentationAttr(Loc, range, FinalMetadata, Visibility, false));
 }
 
+ParserResult<DeclarationAttr>
+Parser::parseDeclarationAttribute(SourceLoc AtLoc, SourceLoc Loc) {
+  StringRef attrName = "declaration";
+  bool isDeclModifier = DeclAttribute::isDeclModifier(DAK_Declaration);
+  if (!consumeIf(tok::l_paren)) {
+    diagnose(Tok, diag::attr_expected_lparen, attrName, isDeclModifier);
+    return makeParserError();
+  }
+  if (Tok.isNot(tok::identifier)) {
+    diagnose(Tok, diag::declaration_attr_expected_kind);
+    errorAndSkipUntilConsumeRightParen(*this, attrName);
+    return makeParserError();
+  }
+  auto kind = llvm::StringSwitch<Optional<MacroContext>>(Tok.getText())
+      .Case("freestanding", MacroContext::FreestandingDeclaration)
+      .Case("attached", MacroContext::AttachedDeclaration)
+      .Default(None);
+  if (!kind) {
+    diagnose(Tok, diag::declaration_attr_expected_kind);
+    errorAndSkipUntilConsumeRightParen(*this, attrName);
+    return makeParserError();
+  }
+  consumeToken(tok::identifier);
+  // TODO: Parse peer and member names.
+  SourceLoc rParenLoc;
+  if (!consumeIf(tok::r_paren, rParenLoc)) {
+    diagnose(Tok, diag::attr_expected_rparen, attrName, isDeclModifier);
+    return makeParserError();
+  }
+  SourceRange range(Loc, rParenLoc);
+  return makeParserResult(DeclarationAttr::create(
+      Context, AtLoc, range, *kind, {}, {}, /*isImplicit*/ false));
+}
+
 /// Guts of \c parseSingleAttrOption and \c parseSingleAttrOptionIdentifier.
 ///
 /// \param P The parser object.
@@ -3122,6 +3158,14 @@ bool Parser::parseNewDeclAttribute(DeclAttributes &Attributes, SourceLoc AtLoc,
       return false;
     break;
   }
+  case DAK_Declaration: {
+    auto Attr = parseDeclarationAttribute(AtLoc, Loc);
+    if (Attr.isNonNull())
+      Attributes.add(Attr.get());
+    else
+      return false;
+    break;
+  }
   }
 
   if (DuplicateAttribute) {
@@ -3651,6 +3695,25 @@ bool Parser::parseConventionAttributeInternal(
   return false;
 }
 
+bool Parser::parseUUIDString(UUID &uuid, Diag<> diagnostic) {
+  if (!Tok.is(tok::string_literal)) {
+    diagnose(Tok, diagnostic);
+    return true;
+  }
+
+  bool failed = true;
+  auto literalText = Tok.getText().slice(1, Tok.getText().size() - 1);
+  llvm::SmallString<UUID::StringBufferSize> text(literalText);
+  if (auto id = UUID::fromString(text.c_str())) {
+    uuid = *id;
+    failed = false;
+  } else {
+    diagnose(Tok, diagnostic);
+  }
+  consumeToken(tok::string_literal);
+  return failed;
+}
+
 /// \verbatim
 ///   attribute-type:
 ///     'noreturn'
@@ -3840,24 +3903,12 @@ ParserStatus Parser::parseTypeAttribute(TypeAttributes &Attributes,
     // Parse the opened existential ID string in parens
     SourceLoc beginLoc = Tok.getLoc(), idLoc, endLoc;
     if (consumeIfNotAtStartOfLine(tok::l_paren)) {
-      if (Tok.is(tok::string_literal)) {
-        UUID openedID;
-        idLoc = Tok.getLoc();
-        auto literalText = Tok.getText().slice(1, Tok.getText().size() - 1);
-        llvm::SmallString<UUID::StringBufferSize> text(literalText);
-        if (auto openedID = UUID::fromString(text.c_str())) {
-          Attributes.OpenedID = openedID;
-        } else {
-          diagnose(Tok, diag::opened_attribute_id_value);
-        }
-        consumeToken();
-      } else {
-        diagnose(Tok, diag::opened_attribute_id_value);
-      }
+      idLoc = Tok.getLoc();
+      UUID id;
+      if (!parseUUIDString(id, diag::opened_attribute_id_value))
+        Attributes.OpenedID = id;
 
-      if (Tok.is(tok::comma)) {
-        consumeToken(tok::comma);
-
+      if (consumeIf(tok::comma)) {
         auto constraintType = parseType(diag::expected_type);
         if (constraintType.isNonNull())
           Attributes.ConstraintType = constraintType.getPtrOrNull();
