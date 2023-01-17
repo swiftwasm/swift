@@ -1605,8 +1605,33 @@ static ManagedValue emitBuiltinCreateAsyncTaskInGroup(
       SGF.B.createMetatype(loc, SGF.getLoweredType(futureResultType)));
   }).borrow(SGF, loc).forward(SGF);
 
-  auto function = emitFunctionArgumentForAsyncTaskEntryPoint(SGF, loc, args[2],
-                                                             futureResultType);
+  // FIXME(katei): This is a hack to fix the ABI signature mismatch issue
+  // https://github.com/apple/swift/issues/63060
+  // ==================== BEGIN HACK ====================
+  // Ensure that the closure has the appropriate type.
+  auto extInfo =
+      ASTExtInfoBuilder()
+          .withAsync()
+          .withThrows()
+          .withRepresentation(GenericFunctionType::Representation::Swift)
+          .build();
+  auto genericSig = subs.getGenericSignature().getCanonicalSignature();
+  auto genericResult =
+      GenericTypeParamType::get(/*isParameterPack*/ false,
+                                /*depth*/ 0, /*index*/ 0, SGF.getASTContext());
+  // <T> () async throws -> Void
+  CanType functionTy =
+      GenericFunctionType::get(genericSig, {}, genericResult, extInfo)
+          ->getCanonicalType();
+  AbstractionPattern origParam(genericSig, functionTy);
+  CanType substParamType = functionTy.subst(subs)->getCanonicalType();
+  auto reabstractedFun =
+      SGF.emitSubstToOrigValue(loc, args[2], origParam, substParamType);
+  // ==================== END HACK ======================
+
+  auto function = emitFunctionArgumentForAsyncTaskEntryPoint(
+      SGF, loc, reabstractedFun, futureResultType);
+
   auto apply = SGF.B.createBuiltin(
       loc,
       ctx.getIdentifier(
