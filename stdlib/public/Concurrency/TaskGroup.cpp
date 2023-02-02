@@ -569,7 +569,8 @@ struct TaskGroupStatus {
     #define STDERR_FILENO 2
    _write(STDERR_FILENO, message, strlen(message));
 #else
-    write(STDERR_FILENO, message, strlen(message));
+    fputs(message, stderr);
+    fflush(stderr);
 #endif
 #if defined(__APPLE__)
     asl_log(nullptr, nullptr, ASL_LEVEL_ERR, "%s", message);
