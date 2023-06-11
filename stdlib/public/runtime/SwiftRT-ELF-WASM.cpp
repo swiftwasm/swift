@@ -1,4 +1,4 @@
-//===--- SwiftRT-ELF.cpp --------------------------------------------------===//
+//===--- SwiftRT-ELF-WASM.cpp ---------------------------------------------===//
 //
 // This source file is part of the Swift.org open source project
 //
@@ -17,7 +17,13 @@
 #include <cstddef>
 #include <new>
 
+#if defined(__ELF__)
 extern "C" const char __dso_handle[];
+#elif defined(__wasm__)
+// NOTE: Multi images in a single process is not yet
+// stabilized in WebAssembly toolchain outside of Emscripten.
+static constexpr const void *__dso_handle = nullptr;
+#endif
 
 #if SWIFT_ENABLE_BACKTRACING
 // Drag in a symbol from the backtracer, to force the static linker to include
@@ -29,9 +35,14 @@ static const void *__backtraceRef __attribute__((used))
 // Create empty sections to ensure that the start/stop symbols are synthesized
 // by the linker.  Otherwise, we may end up with undefined symbol references as
 // the linker table section was never constructed.
+#if defined(__ELF__)
+# define DECLARE_EMPTY_METADATA_SECTION(name) __asm__("\t.section " #name ",\"a\"\n");
+#elif defined(__wasm__)
+# define DECLARE_EMPTY_METADATA_SECTION(name) __asm__("\t.section " #name ",\"\",@\n");
+#endif
 
 #define DECLARE_SWIFT_SECTION(name)                                                          \
-  __asm__("\t.section " #name ",\"a\"\n");                                                   \
+  DECLARE_EMPTY_METADATA_SECTION(name)                                                       \
   __attribute__((__visibility__("hidden"),__aligned__(1))) extern const char __start_##name; \
   __attribute__((__visibility__("hidden"),__aligned__(1))) extern const char __stop_##name;
 
