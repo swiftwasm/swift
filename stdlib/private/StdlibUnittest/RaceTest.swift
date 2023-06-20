@@ -38,7 +38,9 @@
 
 import SwiftPrivate
 import SwiftPrivateLibcExtras
+#if !os(WASI)
 import SwiftPrivateThreadExtras
+#endif
 #if canImport(Darwin)
 import Darwin
 #elseif canImport(Glibc)
