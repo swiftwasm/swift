@@ -302,6 +302,23 @@ ${concurrency_libs}
                                  DESTINATION "lib/swift_static/${lowercase_sdk}"
                                  COMPONENT stdlib)
     elseif("${sdk}" STREQUAL "WASI")
+      set(linkfile "${lowercase_sdk}/static-stdlib-args.lnk")
+      file(WRITE "${SWIFTSTATICLIB_DIR}/${linkfile}" "
+-ldl
+-latomic
+-lswiftWasiPthread
+-lswiftCore
+-licuuc
+-licudata
+-lstdc++
+-lm
+-Xlinker --exclude-libs
+-Xlinker ALL")
+
+      swift_install_in_component(FILES "${SWIFTSTATICLIB_DIR}/${linkfile}"
+                                DESTINATION "lib/swift_static/${lowercase_sdk}"
+                                COMPONENT stdlib)
+
       set(swift_icu_libs_wasi_list)
       set(icu_modules UC I18N DATA)
       foreach(module IN LISTS icu_modules)
