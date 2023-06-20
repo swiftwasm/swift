@@ -459,7 +459,7 @@ def create_argument_parser():
            help='if set, provide a fixed path for the Swift backtracer')
 
     option('--compiler-vendor', store,
-           choices=['none', 'apple'],
+           choices=['none', 'apple', 'swiftwasm'],
            default=defaults.COMPILER_VENDOR,
            help='Compiler vendor name')
     option('--clang-compiler-version', store,
