@@ -566,6 +566,11 @@ option(SWIFT_STDLIB_ENABLE_OBJC_INTEROP
        "Should stdlib be built with Obj-C interop."
        "${SWIFT_STDLIB_ENABLE_OBJC_INTEROP_default}")
 
+# FIXME(wasm) Reflection tests are temporalily disabled due to lack of linker features
+option(SWIFTWASM_DISABLE_REFLECTION_TEST
+    "Disable building swift-reflection-test for WebAssembly build"
+    FALSE)
+
 #
 # User-configurable experimental options.  Do not use in production builds.
 #
