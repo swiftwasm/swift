@@ -224,7 +224,8 @@ getAccessorForComputedComponent(IRGenModule &IGM,
       componentArgsBuf = params.claimNext();
       // Pass the argument pointer down to the underlying function, if it
       // wants it.
-      if (hasSubscriptIndices) {
+      // Always forward extra argument to match callee and caller signature on WebAssembly
+      if (hasSubscriptIndices || IGM.TargetInfo.OutputObjectFormat == llvm::Triple::Wasm) {
         forwardedArgs.add(componentArgsBuf);
       }
       break;
@@ -250,6 +251,10 @@ getAccessorForComputedComponent(IRGenModule &IGM,
                                forwardingSubs,
                                &ignoreWitnessMetadata,
                                forwardedArgs);
+    } else if (IGM.Triple.isOSBinFormatWasm()) {
+      // wasm: Add null swift.type pointer to match signature even when there is
+      // no generic environment.
+      forwardedArgs.add(llvm::ConstantPointerNull::get(IGM.TypeMetadataPtrTy));
     }
     auto fnPtr =
         FunctionPointer::forDirect(IGM, accessorFn, /*secondaryValue*/ nullptr,
