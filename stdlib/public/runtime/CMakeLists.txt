@@ -256,10 +256,31 @@ foreach(sdk ${SWIFT_SDKS})
       add_dependencies(stdlib swift-stdlib-${arch_suffix} swiftImageRegistration-${arch_suffix})
     endif()
 
+    string(TOLOWER "${sdk}" lowercase_sdk)
     # Generate the static-stdlib-args.lnk file used by -static-stdlib option for
     # 'GenericUnix' (eg linux)
     if(${SWIFT_SDK_${sdk}_OBJECT_FORMAT} STREQUAL ELF)
       string(TOLOWER "${sdk}" lowercase_sdk)
+      if(SWIFT_${SWIFT_HOST_VARIANT_SDK}_${SWIFT_HOST_VARIANT_ARCH}_ICU_STATICLIB)
+        set(libicu_i18n_a -licui18nswift)
+        set(libicu_uc_a -licuucswift)
+        set(libicu_data_a -licudataswift)
+      else()
+        find_package(ICU REQUIRED COMPONENTS uc i18n)
+        get_filename_component(ICU_UC_LIBDIR "${ICU_UC_LIBRARIES}" DIRECTORY)
+        get_filename_component(ICU_I18N_LIBDIR "${ICU_I18N_LIBRARIES}" DIRECTORY)
+
+        set(libicu_i18n_a -licui18n)
+        set(libicu_uc_a -licuuc)
+        set(libicu_data_a)
+        if(EXISTS ${ICU_I18N_LIBDIR}/libicui18n.a AND
+            EXISTS ${ICU_UC_LIBDIR}/libicuuc.a AND
+            EXISTS ${ICU_UC_LIBDIR}/libicudata.a)
+          set(libicu_i18n_a ${ICU_I18N_LIBDIR}/libicui18n.a)
+          set(libicu_uc_a ${ICU_UC_LIBDIR}/libicuuc.a)
+          set(libicu_data_a ${ICU_UC_LIBDIR}/libicudata.a)
+        endif()
+      endif()
       set(libpthread -lpthread)
       set(concurrency_libs)
       set(android_libraries)
@@ -286,6 +307,28 @@ ${concurrency_libs}
       swift_install_in_component(FILES "${SWIFTSTATICLIB_DIR}/${linkfile}"
                                  DESTINATION "lib/swift_static/${lowercase_sdk}"
                                  COMPONENT stdlib)
+    elseif("${sdk}" STREQUAL "WASI")
+      set(swift_icu_libs_wasi_list)
+      set(icu_modules UC I18N DATA)
+      foreach(module IN LISTS icu_modules)
+        set(module_lib "${SWIFT_WASI_wasm32_ICU_${module}}")
+        get_filename_component(module_lib_name ${module_lib} NAME)
+        add_custom_command_target(swift_icu_${module}_${sdk}
+          COMMAND
+            "${CMAKE_COMMAND}" -E copy
+            "${module_lib}"
+            "${SWIFTSTATICLIB_DIR}/${lowercase_sdk}/${module_lib_name}"
+          OUTPUT
+            "${SWIFTSTATICLIB_DIR}/${lowercase_sdk}/${module_lib_name}"
+          DEPENDS
+            "${module_lib}")
+        list(APPEND swift_icu_libs_wasi_list ${swift_icu_${module}_${sdk}})
+        swift_install_in_component(FILES "${SWIFTSTATICLIB_DIR}/${lowercase_sdk}/${module_lib_name}"
+                                  DESTINATION "lib/swift_static/${lowercase_sdk}"
+                                  COMPONENT stdlib)
+      endforeach()
+      add_custom_target(swift_icu_libs_wasi ALL DEPENDS ${swift_icu_libs_wasi_list})
+      add_dependencies(stdlib swift_icu_libs_wasi)
     endif()
   endforeach()
 endforeach()
