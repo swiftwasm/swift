@@ -64,6 +64,13 @@ class LLVM(cmake_product.CMakeProduct):
         if self.args.compiler_vendor == "none":
             return []
 
+        if self.args.compiler_vendor == "swiftwasm":
+            return [
+                ('CLANG_VENDOR', 'SwiftWasm'),
+                ('CLANG_VENDOR_UTI', 'org.swiftwasm.compilers.llvm.clang'),
+                ('PACKAGE_VERSION', str(self.args.clang_user_visible_version))
+            ]
+
         if self.args.compiler_vendor != "apple":
             raise RuntimeError("Unknown compiler vendor?!")
 

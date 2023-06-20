@@ -135,7 +135,7 @@ public func _stdlib_thread_join<Result>(
   }
   return (CInt(result), value)
 #elseif os(WASI)
-   // WASI environment has a only single thread
+   // WASI environment is single-threaded
    return (0, nil)
 #else
   var threadResultRawPtr: UnsafeMutableRawPointer?

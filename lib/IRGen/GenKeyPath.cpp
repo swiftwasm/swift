@@ -119,7 +119,6 @@ getAccessorForComputedComponent(IRGenModule &IGM,
     accessor = component.getSubscriptIndexHash();
     break;
   }
-  
   // If the accessor is not generic, and locally available, we can use it as is.
   // If it's only externally available, we need a local thunk to relative-
   // reference.
@@ -225,7 +224,8 @@ getAccessorForComputedComponent(IRGenModule &IGM,
       componentArgsBuf = params.claimNext();
       // Pass the argument pointer down to the underlying function, if it
       // wants it.
-      if (hasSubscriptIndices) {
+      // Always forward extra argument to match callee and caller signature on WebAssembly
+      if (hasSubscriptIndices || IGM.TargetInfo.OutputObjectFormat == llvm::Triple::Wasm) {
         forwardedArgs.add(componentArgsBuf);
       }
       break;
@@ -251,6 +251,10 @@ getAccessorForComputedComponent(IRGenModule &IGM,
                                forwardingSubs,
                                &ignoreWitnessMetadata,
                                forwardedArgs);
+    } else if (IGM.Triple.isOSBinFormatWasm()) {
+      // wasm: Add null swift.type pointer to match signature even when there is
+      // no generic environment.
+      forwardedArgs.add(llvm::ConstantPointerNull::get(IGM.TypeMetadataPtrTy));
     }
     auto fnPtr =
         FunctionPointer::forDirect(IGM, accessorFn, /*secondaryValue*/ nullptr,
@@ -382,6 +386,7 @@ getWitnessTableForComputedComponent(IRGenModule &IGM,
                                                  /*vararg*/ false);
       auto destroyFn = llvm::Function::Create(destroyType,
         llvm::GlobalValue::PrivateLinkage, "keypath_destroy", IGM.getModule());
+      destroyFn->setCallingConv(IGM.SwiftCC);
       destroy = destroyFn;
       destroyFn->setAttributes(IGM.constructInitialAttributes());
       destroyFn->setCallingConv(IGM.SwiftCC);
@@ -433,6 +438,7 @@ getWitnessTableForComputedComponent(IRGenModule &IGM,
                                               /*vararg*/ false);
       auto copyFn = llvm::Function::Create(copyType,
         llvm::GlobalValue::PrivateLinkage, "keypath_copy", IGM.getModule());
+      copyFn->setCallingConv(IGM.SwiftCC);
       copy = copyFn;
       copyFn->setAttributes(IGM.constructInitialAttributes());
       copyFn->setCallingConv(IGM.SwiftCC);

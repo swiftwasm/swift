@@ -320,6 +320,7 @@ IRGenFunction::emitLoadOfRelativePointer(Address addr, bool isFar,
   if (!isFar) {
     value = Builder.CreateSExt(value, IGM.IntPtrTy);
   }
+
   auto *addrInt = Builder.CreatePtrToInt(addr.getAddress(), IGM.IntPtrTy);
   auto *uncastPointerInt = Builder.CreateAdd(addrInt, value);
   auto *uncastPointer = Builder.CreateIntToPtr(uncastPointerInt, IGM.Int8PtrTy);

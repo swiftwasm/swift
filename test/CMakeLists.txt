@@ -114,7 +114,8 @@ function(get_test_dependencies SDK result_var_name)
      ("${SDK}" STREQUAL "OPENBSD") OR
      ("${SDK}" STREQUAL "ANDROID") OR
      ("${SDK}" STREQUAL "WINDOWS") OR
-     ("${SDK}" STREQUAL "HAIKU"))
+     ("${SDK}" STREQUAL "HAIKU") OR
+     ("${SDK}" STREQUAL "WASI"))
     # No extra dependencies.
   else()
     message(FATAL_ERROR "Unknown SDK: ${SDK}")
@@ -154,8 +155,14 @@ if(NOT SWIFT_INCLUDE_TOOLS)
       )
   endif()
   if(SWIFT_BUILD_STDLIB)
-    list(APPEND SWIFT_LIT_ARGS
-         "--param" "test_resource_dir=${SWIFTLIB_DIR}")
+    # if building only static stdlib, prefer static lib.
+    if(NOT SWIFT_BUILD_DYNAMIC_STDLIB AND SWIFT_BUILD_STATIC_STDLIB)
+      list(APPEND SWIFT_LIT_ARGS
+           "--param" "test_resource_dir=${SWIFTSTATICLIB_DIR}")
+    else()
+      list(APPEND SWIFT_LIT_ARGS
+           "--param" "test_resource_dir=${SWIFTLIB_DIR}")
+    endif()
   endif()
 endif()
 

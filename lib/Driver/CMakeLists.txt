@@ -14,6 +14,7 @@ set(swiftDriver_sources
   UnixToolChains.cpp
   WebAssemblyToolChains.cpp
   WindowsToolChains.cpp
+  WebAssemblyToolChains.cpp
   )
 
 set(swiftDriver_targetDefines)

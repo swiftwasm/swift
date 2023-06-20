@@ -1,0 +1,256 @@
+name: Build Toolchain
+
+on:
+  push:
+    branches:
+      - swiftwasm
+      - swiftwasm-release/**
+  pull_request:
+    branches:
+      - swiftwasm
+      - swiftwasm-release/**
+    types: [opened, synchronize, reopened]
+jobs:
+  start-runner:
+    name: Start self-hosted EC2 runner
+    runs-on: ubuntu-latest
+    # Run only on main branches to avoid triggers by non-collaborator
+    if: ${{ github.event_name == 'push' || contains(github.event.pull_request.labels.*.name, 'check-self-hosted-ci') }}
+    outputs:
+      ubuntu20_04_aarch64-label: ${{ steps.start-ubuntu20_04_aarch64-runner.outputs.label }}
+      ubuntu20_04_aarch64-ec2-instance-id: ${{ steps.start-ubuntu20_04_aarch64-runner.outputs.ec2-instance-id }}
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+      - name: Start EC2 runner (ubuntu20_04_aarch64)
+        id: start-ubuntu20_04_aarch64-runner
+        uses: machulav/ec2-github-runner@v2
+        with:
+          mode: start
+          github-token: ${{ secrets.SWIFTWASM_BUILDBOT_TOKEN }}
+          ec2-image-id: ami-03803f6b50b56647a # swiftwasm-ci/ubuntu/images/hvm-ssd/ubuntu-jammy-22.04-arm64-server-20221201
+          ec2-instance-type: c6g.xlarge
+          subnet-id: subnet-327f4a13
+          security-group-id: sg-0429f5ec2bee9dc0c
+  stop-runner:
+    name: Stop self-hosted EC2 runner
+    needs: [start-runner, build-toolchain]
+    runs-on: ubuntu-latest
+    # Required to stop the runner even if the error happened in the previous jobs
+    if: ${{ always() && needs.start-runner.result == 'success' }}
+    # The runner can be already stopped when re-running a part of failed jobs
+    continue-on-error: true
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+      - name: Stop EC2 runner (ubuntu20_04_aarch64)
+        uses: machulav/ec2-github-runner@v2
+        with:
+          mode: stop
+          github-token: ${{ secrets.SWIFTWASM_BUILDBOT_TOKEN }}
+          label: ${{ needs.start-runner.outputs.ubuntu20_04_aarch64-label }}
+          ec2-instance-id: ${{ needs.start-runner.outputs.ubuntu20_04_aarch64-ec2-instance-id }}
+
+  build-matrix:
+    name: Build matrix
+    needs: [start-runner]
+    runs-on: ubuntu-latest
+    if: ${{ always() }}
+    outputs:
+      entries: ${{ steps.generate.outputs.entries }}
+    steps:
+      - uses: actions/checkout@v3
+      - name: Generate entries
+        id: generate
+        run: |
+          START_RUNNER_JSON="${{ runner.temp }}/start-runner.json"
+          cat <<EOF > "$START_RUNNER_JSON"
+          ${{ toJson(needs.start-runner) }}
+          EOF
+          echo "entries=$(ruby .github/scripts/build-matrix.rb --runner $START_RUNNER_JSON)" >> $GITHUB_OUTPUT
+
+  build-toolchain:
+    env:
+      TOOLCHAIN_CHANNEL: 5.8
+      DEVELOPER_DIR: /Applications/Xcode_13.2.1.app/Contents/Developer/
+      # https://github.com/actions/cache/blob/main/tips-and-workarounds.md#cache-segment-restore-timeout
+      SEGMENT_DOWNLOAD_TIMEOUT_MINS: 30
+    needs: [build-matrix]
+    if: ${{ always() }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.build-matrix.outputs.entries) }}
+
+    name: Target ${{ matrix.target }}
+    timeout-minutes: 0
+    runs-on: ${{ matrix.agent_query }}
+    steps:
+      - name: Free disk space
+        if: ${{ matrix.free_disk_space }}
+        run: |
+          df -h
+          sudo rm -rf /opt/hostedtoolcache
+          sudo rm -rf /usr/share/dotnet
+          sudo apt clean
+          
+          if docker info > /dev/null 2>&1; then
+            docker rmi $(docker image ls -aq)
+          fi
+          df -h
+
+      - uses: actions/checkout@v3
+        with:
+          path: swift
+          fetch-depth: 0
+
+      - name: Prepare sccache timestamp
+        id: cache_key
+        run: |
+          export SCCACHE_KEY_PREFIX="${{ matrix.target }}-${{ env.TOOLCHAIN_CHANNEL }}-sccache-v14-"
+          echo "SCCACHE_KEY_PREFIX=$SCCACHE_KEY_PREFIX" >> $GITHUB_OUTPUT
+          echo "SCCACHE_KEY=$SCCACHE_KEY_PREFIX$(date +'%Y-%m-%d-%I-%M-%S')" >> $GITHUB_OUTPUT
+
+      - name: Check Xcode version
+        if: ${{ startsWith(matrix.build_os, 'macos-') }}
+        run: |
+          xcodebuild -version
+
+      - uses: actions/cache/restore@v3
+        id: build-cache
+        with:
+          path: build-cache
+          key: ${{ steps.cache_key.outputs.SCCACHE_KEY }}
+          restore-keys: |
+            ${{ steps.cache_key.outputs.SCCACHE_KEY_PREFIX }}
+
+      - name: Clean build directory
+        if: ${{ matrix.clean_build_dir }}
+        run: |
+          rm -rf ${{ github.workspace }}/target-build \
+            ${{ github.workspace }}/host-build \
+            ${{ github.workspace }}/build-sdk \
+            ${{ github.workspace }}/host-toolchain-sdk \
+            ${{ github.workspace }}/dist-toolchain-sdk
+
+      - run: chmod -R 777 ./build-cache
+        if: ${{ steps.build-cache.outputs.cache-hit }}
+      - name: Install Homebrew dependencies
+        if: ${{ startsWith(matrix.build_os, 'macos-') }}
+        run: brew bundle --file swift/Brewfile && brew install wasmer
+      - name: Build ${{ matrix.target }} installable archive on Docker container
+        if: ${{ matrix.container != null }}
+        timeout-minutes: 300 # Exit before 6 hours limit to allow cache upload
+        run: |
+          docker volume create oss-swift-package
+          docker run --name swiftwasm-ci-buildbot \
+            --security-opt=no-new-privileges \
+            --cap-add=SYS_PTRACE \
+            --security-opt seccomp=unconfined \
+            -dit \
+            -e TOOLCHAIN_CHANNEL=${{ env.TOOLCHAIN_CHANNEL }} \
+            -w /home/build-user/ \
+            -v ${{ github.workspace }}:/source \
+            -v oss-swift-package:/home/build-user \
+            ${{ matrix.container }}
+          docker exec swiftwasm-ci-buildbot /bin/bash -lc 'env; cp -r /source/* /home/build-user/; ./swift/utils/webassembly/ci.sh'
+          docker cp swiftwasm-ci-buildbot:/home/build-user/swift-wasm-${{ env.TOOLCHAIN_CHANNEL }}-SNAPSHOT-${{ matrix.target }}.tar.gz .
+
+      - name: Extract build-cache from Docker container
+        if: ${{ matrix.container != null && always() }}
+        run: |
+          rm -rf ${{ github.workspace }}/build-cache
+          docker cp swiftwasm-ci-buildbot:/home/build-user/build-cache ${{ github.workspace }}/build-cache
+
+      - name: Build ${{ matrix.target }} installable archive
+        if: ${{ matrix.container == null }}
+        timeout-minutes: 300 # Exit before 6 hours limit to allow cache upload
+        env:
+          SKIP_XCODE_VERSION_CHECK: 1
+        run: |
+          ./swift/utils/webassembly/ci.sh
+
+      - uses: actions/cache/save@v3
+        if: ${{ always() }}
+        with:
+          path: build-cache
+          key: ${{ steps.cache_key.outputs.SCCACHE_KEY }}
+
+      - name: Upload ${{ matrix.target }} installable archive
+        uses: actions/upload-artifact@v3
+        with:
+          name: ${{ matrix.target }}-installable
+          path: swift-wasm-${{ env.TOOLCHAIN_CHANNEL }}-SNAPSHOT-${{ matrix.target }}.tar.gz
+
+      - name: Add wasmer in PATH for testing
+        run: echo "$HOME/.wasmer/bin" >> $GITHUB_PATH
+
+      - name: Run stdlib tests for wasi-wasm32
+        if: ${{ matrix.run_stdlib_test && matrix.container != null }}
+        run: |
+          docker exec swiftwasm-ci-buildbot /bin/bash -lc "cd target-build/swift-stdlib-wasi-wasm32 && ninja check-swift-wasi-wasm32-custom"
+      - name: Run stdlib tests for wasi-wasm32
+        if: ${{ matrix.run_stdlib_test && matrix.container == null }}
+        run: |
+          TARGET_STDLIB_BUILD_DIR=${{ github.workspace }}/target-build/swift-stdlib-wasi-wasm32
+          ninja check-swift-wasi-wasm32-custom -C "$TARGET_STDLIB_BUILD_DIR"
+
+      - name: Run all tests for wasi-wasm32
+        if: ${{ matrix.run_full_test }}
+        run: |
+          TARGET_STDLIB_BUILD_DIR=${{ github.workspace }}/target-build/swift-stdlib-wasi-wasm32
+          # Run all tests but ignore failure temporarily
+          ninja check-swift-wasi-wasm32 -C "$TARGET_STDLIB_BUILD_DIR" || true
+
+      - name: Pack test results
+        if: ${{ matrix.run_full_test }}
+        run: |
+          tar cJf ./swift-test-results.tar.gz target-build/swift-stdlib-wasi-wasm32/swift-test-results
+      - name: Upload test results
+        uses: actions/upload-artifact@v3
+        if: ${{ matrix.run_full_test }}
+        with:
+          name: ${{ matrix.target }}-test-results
+          path: ./swift-test-results.tar.gz
+
+      # Run e2e test
+      - name: Prepare E2E test
+        run: |
+          INSTALL_DIR=$(mktemp -d)
+          tar xf swift-wasm-$TOOLCHAIN_CHANNEL-SNAPSHOT-${{ matrix.target }}.tar.gz -C "$INSTALL_DIR"
+          echo "TOOLCHAIN=$(find "$INSTALL_DIR" -name "swift-wasm-$TOOLCHAIN_CHANNEL-*" -type d | head -n1)" >> $GITHUB_ENV
+      - name: Build hello.wasm
+        shell: bash
+        if: ${{ matrix.build_hello_wasm }}
+        run: |
+          echo 'print("Hello, world!")' > hello.swift
+          $TOOLCHAIN/usr/bin/swiftc \
+                -target wasm32-unknown-wasi \
+                -sdk $TOOLCHAIN/usr/share/wasi-sysroot \
+                hello.swift -o hello.wasm && \
+                echo "Successfully linked hello.wasm"
+      - name: Upload hello.wasm
+        if: ${{ matrix.build_hello_wasm }}
+        uses: actions/upload-artifact@v3
+        with:
+          name: ${{ matrix.target }}-hello.wasm
+          path: hello.wasm
+      - name: Checkout integration-tests
+        if: ${{ matrix.run_e2e_test }}
+        uses: actions/checkout@v3
+        with:
+          repository: swiftwasm/integration-tests
+          path: integration-tests
+      - name: Run integration tests
+        if: ${{ matrix.run_e2e_test }}
+        run: |
+          $TOOLCHAIN/usr/bin/swift run # Use TOOLCHAIN env value
+        working-directory: ${{ github.workspace }}/integration-tests

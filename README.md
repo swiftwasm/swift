@@ -1,3 +1,23 @@
+# SwiftWasm 
+
+## Compile your Swift code to WebAssembly
+
+[![CI status](https://github.com/swiftwasm/swift/workflows/Build%20Toolchain/badge.svg?branch=swiftwasm)](https://github.com/swiftwasm/swift/actions?query=workflow%3ABuild) [![Discord](https://img.shields.io/discord/780838335798706197?label=Discord)](https://discord.gg/ashJW8T8yp)
+
+This is the main repository for SwiftWasm toolchain and SDK. Please refer to [the 
+SwiftWasm book](https://swiftwasm.github.io/swiftwasm-book/) to get started, and to
+the [`awesome-swiftwasm`](https://github.com/swiftwasm/awesome-swiftwasm) list for
+more links in the SwiftWasm ecosystem.
+
+If you'd like to participate in the growing [SwiftWasm](https://swiftwasm.org) community, you're
+very welcome to join [our Discord server](https://discord.gg/ashJW8T8yp), or the `#webassembly`
+channel in [the SwiftPM Slack](https://swift-package-manager.herokuapp.com/).
+
+What follows below is `README.md` of the upstream Swift project included verbatim. If you'd like
+to track the status of our builds, please refer to our [GitHub Actions page](https://github.com/swiftwasm/swift/actions).
+
+<hr>
+<br/>
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://www.swift.org/assets/images/swift~dark.svg">
   <img src="https://www.swift.org/assets/images/swift.svg" alt="Swift logo" height="70">

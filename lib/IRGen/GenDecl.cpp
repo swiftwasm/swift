@@ -3257,7 +3257,8 @@ llvm::Constant *swift::irgen::emitCXXConstructorThunkIfNeeded(
 
 StackProtectorMode IRGenModule::shouldEmitStackProtector(SILFunction *f) {
   const SILOptions &opts = IRGen.SIL.getOptions();
-  return (opts.EnableStackProtection && f->needsStackProtection()) ?
+  // FIXME(katei): stack protection support will be added by https://github.com/WebAssembly/wasi-libc/pull/351
+  return (opts.EnableStackProtection && f->needsStackProtection() && Triple.getObjectFormat() != llvm::Triple::Wasm) ?
     StackProtectorMode::StackProtector : StackProtectorMode::NoStackProtector;
 }
 
@@ -3730,6 +3731,12 @@ IRGenModule::getAddrOfLLVMVariableOrGOTEquivalent(LinkEntity entity) {
       cast<llvm::GlobalValue>(entry), entity);
     return {gotEquivalent, ConstantReference::Indirect};
   };
+  
+  // Avoid to create GOT because wasm32 doesn't support
+  // dynamic linking yet
+  if (TargetInfo.OutputObjectFormat == llvm::Triple::Wasm) {
+    return direct();
+  }
 
   // Dynamically replaceable function keys are stored in the GlobalVars
   // table, but they don't have an associated Decl, so they require

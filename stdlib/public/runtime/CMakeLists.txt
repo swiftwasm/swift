@@ -75,6 +75,7 @@ set(swift_runtime_sources
 set(LLVM_OPTIONAL_SOURCES
     SwiftRT-COFF.cpp
     SwiftRT-ELF.cpp
+    SwiftRT-WASM.cpp
     ${swift_runtime_sources}
     ${swift_runtime_objc_sources}
     ${swift_runtime_leaks_sources})
@@ -83,8 +84,7 @@ set(swift_runtime_library_compile_flags ${swift_runtime_compile_flags})
 list(APPEND swift_runtime_library_compile_flags -DswiftCore_EXPORTS)
 list(APPEND swift_runtime_library_compile_flags -I${SWIFT_SOURCE_DIR}/stdlib/include/llvm/Support -I${SWIFT_SOURCE_DIR}/include)
 
-set(sdk "${SWIFT_HOST_VARIANT_SDK}")
-if(SWIFT_BUILD_STATIC_STDLIB AND "${sdk}" STREQUAL "LINUX")
+macro(add_image_inspection_shared sdk primary_arch inspection_file linkfile_src)
   set(static_binary_lnk_file_list)
   string(TOLOWER "${sdk}" lowercase_sdk)
 
@@ -93,19 +93,57 @@ if(SWIFT_BUILD_STATIC_STDLIB AND "${sdk}" STREQUAL "LINUX")
   add_custom_command_target(swift_static_binary_${sdk}_args
     COMMAND
       "${CMAKE_COMMAND}" -E copy
-      "${SWIFT_SOURCE_DIR}/utils/static-executable-args.lnk"
+      "${linkfile_src}"
       "${SWIFTSTATICLIB_DIR}/${linkfile}"
     OUTPUT
       "${SWIFTSTATICLIB_DIR}/${linkfile}"
     DEPENDS
-      "${SWIFT_SOURCE_DIR}/utils/static-executable-args.lnk")
+      "${linkfile_src}")
 
   list(APPEND static_binary_lnk_file_list ${swift_static_binary_${sdk}_args})
   swift_install_in_component(FILES "${SWIFTSTATICLIB_DIR}/${linkfile}"
                              DESTINATION "lib/swift_static/${lowercase_sdk}"
                              COMPONENT stdlib)
-  add_dependencies(stdlib ${static_binary_lnk_file_list})
+endmacro()
+
+set(is_image_inspection_required)
+foreach(sdk IN LISTS SWIFT_SDKS)
+  set(image_inspection_shared_sdk)
+  set(primary_arch)
+  set(image_inspection_shared_file)
+  set(linkfile_src)
+
+  if("${SWIFT_SDK_${sdk}_OBJECT_FORMAT}" STREQUAL "ELF")
+    list(APPEND ELFISH_SDKS ${sdk})
+    set(linkfile_src "${SWIFT_SOURCE_DIR}/utils/static-executable-args.lnk")
+  elseif("${SWIFT_SDK_${sdk}_OBJECT_FORMAT}" STREQUAL "WASM")
+    set(linkfile_src "${SWIFT_SOURCE_DIR}/utils/webassembly/static-executable-args.lnk")
+  endif()
+
+  if(SWIFT_BUILD_STATIC_STDLIB AND "${sdk}" STREQUAL "LINUX")
+    set(image_inspection_shared_sdk "${sdk}")
+    set(image_inspection_shared_file ImageInspectionELF.cpp)
+  elseif(SWIFT_BUILD_STATIC_STDLIB AND "${sdk}" STREQUAL "WASI")
+    set(image_inspection_shared_sdk "${sdk}")
+    set(image_inspection_shared_file ImageInspectionWasm.cpp)
+    # Set default arch
+    set(primary_arch "wasm32")
+  endif()
+
+  if("${sdk}" STREQUAL "${SWIFT_PRIMARY_VARIANT_SDK}")
+    set(primary_arch ${SWIFT_PRIMARY_VARIANT_ARCH})
+  endif()
+
+  if(NOT "${image_inspection_shared_sdk}" STREQUAL "" AND NOT "${primary_arch}" STREQUAL "")
+    set(is_image_inspection_required TRUE)
+    add_image_inspection_shared(${image_inspection_shared_sdk} ${primary_arch} ${image_inspection_shared_file} ${linkfile_src})
+  endif()
+endforeach()
+
+if(is_image_inspection_required)
   add_custom_target(static_binary_magic ALL DEPENDS ${static_binary_lnk_file_list})
+  add_dependencies(stdlib static_binary_magic)
+  add_dependencies(stdlib ${static_binary_lnk_file_list})
 endif()
 
 add_swift_target_library(swiftRuntime OBJECT_LIBRARY
@@ -120,11 +158,14 @@ add_swift_target_library(swiftRuntime OBJECT_LIBRARY
 
 set(ELFISH_SDKS)
 set(COFF_SDKS)
+set(WASM_SDKS)
 foreach(sdk ${SWIFT_SDKS})
   if("${SWIFT_SDK_${sdk}_OBJECT_FORMAT}" STREQUAL "ELF")
     list(APPEND ELFISH_SDKS ${sdk})
   elseif("${SWIFT_SDK_${sdk}_OBJECT_FORMAT}" STREQUAL "COFF")
     list(APPEND COFF_SDKS ${sdk})
+  elseif("${SWIFT_SDK_${sdk}_OBJECT_FORMAT}" STREQUAL "WASM")
+    list(APPEND WASM_SDKS ${sdk})
   endif()
 endforeach()
 
@@ -140,6 +181,16 @@ add_swift_target_library(swiftImageRegistrationObjectELF
                   TARGET_SDKS ${ELFISH_SDKS}
                   SWIFT_COMPILE_FLAGS ${SWIFT_STANDARD_LIBRARY_SWIFT_FLAGS}
                   INSTALL_IN_COMPONENT none)
+
+add_swift_target_library(swiftImageRegistrationObjectWASM
+                  OBJECT_LIBRARY IS_STDLIB IS_STDLIB_CORE
+                  SwiftRT-WASM.cpp
+                  C_COMPILE_FLAGS ${SWIFT_RUNTIME_CORE_CXX_FLAGS}
+                  LINK_FLAGS ${SWIFT_RUNTIME_CORE_LINK_FLAGS}
+                  TARGET_SDKS ${WASM_SDKS}
+                  SWIFT_COMPILE_FLAGS ${SWIFT_STANDARD_LIBRARY_SWIFT_FLAGS}
+                  INSTALL_IN_COMPONENT none)
+
 # FIXME(compnerd) this should be compiled twice, once for static and once for
 # shared.  The static version should be used for building the standard library.
 add_swift_target_library(swiftImageRegistrationObjectCOFF
@@ -157,7 +208,8 @@ foreach(sdk ${SWIFT_SDKS})
     set(arch_suffix "${SWIFT_SDK_${sdk}_LIB_SUBDIR}-${arch}")
 
     if("${SWIFT_SDK_${sdk}_OBJECT_FORMAT}" STREQUAL "ELF" OR
-       "${SWIFT_SDK_${sdk}_OBJECT_FORMAT}" STREQUAL "COFF")
+       "${SWIFT_SDK_${sdk}_OBJECT_FORMAT}" STREQUAL "COFF" OR
+       "${SWIFT_SDK_${sdk}_OBJECT_FORMAT}" STREQUAL "WASM")
       # TODO(compnerd) switch to the generator expression when cmake is upgraded
       # to a version which supports it.
       # set(swiftrtObject "$<TARGET_OBJECTS:swiftImageRegistrationObject${SWIFT_SDK_${sdk}_OBJECT_FORMAT}-${arch_suffix}>")
@@ -207,10 +259,31 @@ foreach(sdk ${SWIFT_SDKS})
       add_dependencies(stdlib swift-stdlib-${arch_suffix} swiftImageRegistration-${arch_suffix})
     endif()
 
+    string(TOLOWER "${sdk}" lowercase_sdk)
     # Generate the static-stdlib-args.lnk file used by -static-stdlib option for
     # 'GenericUnix' (eg linux)
     if(${SWIFT_SDK_${sdk}_OBJECT_FORMAT} STREQUAL ELF)
       string(TOLOWER "${sdk}" lowercase_sdk)
+      if(SWIFT_${SWIFT_HOST_VARIANT_SDK}_${SWIFT_HOST_VARIANT_ARCH}_ICU_STATICLIB)
+        set(libicu_i18n_a -licui18nswift)
+        set(libicu_uc_a -licuucswift)
+        set(libicu_data_a -licudataswift)
+      else()
+        find_package(ICU REQUIRED COMPONENTS uc i18n)
+        get_filename_component(ICU_UC_LIBDIR "${ICU_UC_LIBRARIES}" DIRECTORY)
+        get_filename_component(ICU_I18N_LIBDIR "${ICU_I18N_LIBRARIES}" DIRECTORY)
+
+        set(libicu_i18n_a -licui18n)
+        set(libicu_uc_a -licuuc)
+        set(libicu_data_a)
+        if(EXISTS ${ICU_I18N_LIBDIR}/libicui18n.a AND
+            EXISTS ${ICU_UC_LIBDIR}/libicuuc.a AND
+            EXISTS ${ICU_UC_LIBDIR}/libicudata.a)
+          set(libicu_i18n_a ${ICU_I18N_LIBDIR}/libicui18n.a)
+          set(libicu_uc_a ${ICU_UC_LIBDIR}/libicuuc.a)
+          set(libicu_data_a ${ICU_UC_LIBDIR}/libicudata.a)
+        endif()
+      endif()
       set(libpthread -lpthread)
       set(concurrency_libs)
       set(android_libraries)
@@ -237,6 +310,45 @@ ${concurrency_libs}
       swift_install_in_component(FILES "${SWIFTSTATICLIB_DIR}/${linkfile}"
                                  DESTINATION "lib/swift_static/${lowercase_sdk}"
                                  COMPONENT stdlib)
+    elseif("${sdk}" STREQUAL "WASI")
+      set(linkfile "${lowercase_sdk}/static-stdlib-args.lnk")
+      file(WRITE "${SWIFTSTATICLIB_DIR}/${linkfile}" "
+-ldl
+-latomic
+-lswiftWasiPthread
+-lswiftCore
+-licuuc
+-licudata
+-lstdc++
+-lm
+-Xlinker --exclude-libs
+-Xlinker ALL")
+
+      swift_install_in_component(FILES "${SWIFTSTATICLIB_DIR}/${linkfile}"
+                                DESTINATION "lib/swift_static/${lowercase_sdk}"
+                                COMPONENT stdlib)
+
+      set(swift_icu_libs_wasi_list)
+      set(icu_modules UC I18N DATA)
+      foreach(module IN LISTS icu_modules)
+        set(module_lib "${SWIFT_WASI_wasm32_ICU_${module}}")
+        get_filename_component(module_lib_name ${module_lib} NAME)
+        add_custom_command_target(swift_icu_${module}_${sdk}
+          COMMAND
+            "${CMAKE_COMMAND}" -E copy
+            "${module_lib}"
+            "${SWIFTSTATICLIB_DIR}/${lowercase_sdk}/${module_lib_name}"
+          OUTPUT
+            "${SWIFTSTATICLIB_DIR}/${lowercase_sdk}/${module_lib_name}"
+          DEPENDS
+            "${module_lib}")
+        list(APPEND swift_icu_libs_wasi_list ${swift_icu_${module}_${sdk}})
+        swift_install_in_component(FILES "${SWIFTSTATICLIB_DIR}/${lowercase_sdk}/${module_lib_name}"
+                                  DESTINATION "lib/swift_static/${lowercase_sdk}"
+                                  COMPONENT stdlib)
+      endforeach()
+      add_custom_target(swift_icu_libs_wasi ALL DEPENDS ${swift_icu_libs_wasi_list})
+      add_dependencies(stdlib swift_icu_libs_wasi)
     endif()
   endforeach()
 endforeach()

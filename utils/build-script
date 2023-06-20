@@ -266,7 +266,6 @@ def validate_arguments(toolchain, args):
             "--legacy-impl is incompatible with building packages needing "
             "a toolchain (%s)" % ", ".join(targets_needing_toolchain))
 
-
 def default_stdlib_deployment_targets(args):
     """
     Return targets for the Swift stdlib, based on the build machine.

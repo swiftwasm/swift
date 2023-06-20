@@ -75,6 +75,15 @@ static bool isSymbolIgnored(const StringRef& name,
     }
   }
 
+  if (llvm::Triple(IRModule.getTargetTriple()).isWasm()) {
+    // `__main_void`, which is called by `_start` in crt1.o, is artificially
+    // aliased in IR module when `main` doesn't take any params.
+    // This alias will be hidden after https://reviews.llvm.org/D75277
+    if (name == "__main_void") {
+      return true;
+    }
+  }
+
   return false;
 }
 
