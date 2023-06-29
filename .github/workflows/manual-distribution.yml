@@ -1,0 +1,29 @@
+name: Manual distribution
+on:
+  workflow_dispatch:
+    inputs:
+      scheme:
+        required: true
+        type: string
+      run-id:
+        required: true
+        type: string
+      override-name:
+        type: string
+        description: 'Toolchain name'
+      display_name:
+        type: string
+        description: 'Display name for Darwin toolchain'
+      display_name_short:
+        type: string
+        description: 'Short display name for Darwin toolchain'
+jobs:
+  manual-distribution:
+    uses: ./.github/workflows/distribute-toolchain.yml
+    secrets: inherit
+    with:
+      scheme: ${{ inputs.scheme }}
+      run-id: ${{ inputs.run-id }}
+      display-name: ${{ inputs.display-name }}
+      display-name-short: ${{ inputs.display-name-short }}
+      override-name: ${{ inputs.override-name }}

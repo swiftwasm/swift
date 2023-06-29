@@ -1,0 +1,15 @@
+name: Nightly distribution
+on:
+  schedule:
+    - cron: '0 0 * * *'
+jobs:
+  nightly-distribution:
+    strategy:
+      matrix:
+        include:
+          - scheme: "main"
+    uses: ./.github/workflows/distribute-toolchain.yml
+    secrets: inherit
+    with:
+      scheme: ${{ matrix.scheme }}
+      run-id: latest
