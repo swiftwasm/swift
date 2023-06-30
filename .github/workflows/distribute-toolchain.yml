@@ -21,6 +21,7 @@ jobs:
     steps:
       - uses: actions/checkout@v3
         with:
+          repository: swiftwasm/swiftwasm-build
           path: swiftwasm-build
       - uses: actions/checkout@v3
         with:
