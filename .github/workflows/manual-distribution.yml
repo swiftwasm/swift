@@ -5,9 +5,11 @@ on:
       scheme:
         required: true
         type: string
+        description:  "Scheme to distribute (e.g. main, release-5.9, ...)"
       run-id:
         required: true
         type: string
+        description: 'GitHub Actions run id in swiftwasm/swiftwasm-build'
       override-name:
         type: string
         description: 'Toolchain name'
