@@ -8,6 +8,7 @@ jobs:
       matrix:
         include:
           - scheme: "main"
+          - scheme: "release-5.9"
     uses: ./.github/workflows/distribute-toolchain.yml
     secrets: inherit
     with:
