@@ -23,6 +23,7 @@ jobs:
         with:
           repository: swiftwasm/swiftwasm-build
           path: swiftwasm-build
+      # Checkout swiftwasm/swift also to push tags
       - uses: actions/checkout@v3
         with:
           repository: swiftwasm/swift
