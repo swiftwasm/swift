@@ -23,13 +23,10 @@ jobs:
         with:
           repository: swiftwasm/swiftwasm-build
           path: swiftwasm-build
-      # Checkout swiftwasm/swift also to push tags
-      - uses: actions/checkout@v3
-        with:
-          repository: swiftwasm/swift
-          path: swift
-      - run: git -C swift remote rename origin swiftwasm
-      - run: git -C swift remote add upstream https://github.com/apple/swift.git
+      - name: git config for pushing tags
+        run: git config --global url."https://x-access-token:$GITHUB_TOKEN@github.com/swiftwasm/swift.git".insteadOf "git@github.com:swiftwasm/swift.git"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Setup environment variables
         run: |
           if [[ -n "${{ github.event.inputs.display-name }}" ]]; then
