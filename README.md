@@ -17,3 +17,12 @@ The actual patches to the toolchain are maintained in the [`swiftwasm/swiftwasm-
 repository. This repository is used only for distribution of the toolchain.
 
 If you'd like to track the status of our builds, please refer to our [GitHub Actions page](https://github.com/swiftwasm/swiftwasm-build/actions).
+
+## Sponsoring
+
+[Become a gold or platinum sponsor](https://github.com/sponsors/swiftwasm/) and contact maintainers to add your logo on our README on Github with a link to your site.
+
+
+<a href="https://www.emergetools.com/">
+  <img src="https://github.com/swiftwasm/swift/assets/11702759/6cb83079-f3e0-4749-b40d-a684fae160ad" width="30%">
+</a>
