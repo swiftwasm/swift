@@ -13,10 +13,10 @@ on:
       override-name:
         type: string
         description: 'Toolchain name'
-      display_name:
+      display-name:
         type: string
         description: 'Display name for Darwin toolchain'
-      display_name_short:
+      display-name-short:
         type: string
         description: 'Short display name for Darwin toolchain'
 jobs:
