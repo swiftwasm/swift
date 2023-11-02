@@ -9,6 +9,7 @@ jobs:
         include:
           - scheme: "main"
           - scheme: "release-5.9"
+          - scheme: "release-5.10"
     uses: ./.github/workflows/distribute-toolchain.yml
     secrets: inherit
     with:
