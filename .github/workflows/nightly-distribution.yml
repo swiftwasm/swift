@@ -10,6 +10,7 @@ jobs:
           - scheme: "main"
           - scheme: "release-5.9"
           - scheme: "release-5.10"
+      fail-fast: false
     uses: ./.github/workflows/distribute-toolchain.yml
     secrets: inherit
     with:
