@@ -9,7 +9,6 @@ jobs:
       matrix:
         include:
           - scheme: "main"
-          - scheme: "release-5.9"
           - scheme: "release-5.10"
           - scheme: "release-6.0"
       fail-fast: false
