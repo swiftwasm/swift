@@ -58,6 +58,7 @@ class WASILibc(product.Product):
 
         sysroot_build_dir = WASILibc.sysroot_build_path(
             build_root, host_target, target_triple)
+        sysroot_install_dir = WASILibc.sysroot_install_path(build_root, target_triple)
         # FIXME: Manually create an empty dir that is usually created during
         # check-symbols. The directory is required during sysroot installation step.
         os.makedirs(os.path.join(sysroot_build_dir, "share"), exist_ok=True)
@@ -74,13 +75,45 @@ class WASILibc(product.Product):
             '-C', self.source_dir,
             'OBJDIR=' + os.path.join(self.build_dir, 'obj-' + thread_model),
             'SYSROOT=' + sysroot_build_dir,
-            'INSTALL_DIR=' + WASILibc.sysroot_install_path(build_root, target_triple),
+            'INSTALL_DIR=' + sysroot_install_dir,
             'CC=' + os.path.join(clang_tools_path, 'clang'),
             'AR=' + os.path.join(llvm_tools_path, 'llvm-ar'),
             'NM=' + os.path.join(llvm_tools_path, 'llvm-nm'),
             'THREAD_MODEL=' + thread_model,
             'TARGET_TRIPLE=' + target_triple,
         ])
+
+        # FIXME(katei): Workaround to access `errno` without actor isolation.
+        # Remove the workaround once we fixed
+        # https://github.com/swiftlang/swift/issues/75819 or
+        # https://github.com/swiftlang/swift/issues/75820
+        errno_patch = """diff --git a/__errno.h b/__errno.h
+index 4fd983a..7e9e2d9 100644
+--- a/__errno.h
++++ b/__errno.h
+@@ -5,6 +5,15 @@
+ extern "C" {
+ #endif
+
++// BEGIN SWIFT PATCH
++#if __swift__
++// NOTE: Mark errno as nonisolated(unsafe) so that it can be accessed from any
++// actor. This is a workaround until we have one of the following:
++// - `__swift_attr__` support in apinotes
++// - `thread_local` support in ClangImporter
++__attribute__((__swift_attr__("nonisolated(unsafe)")))
++#endif
++// END SWIFT PATCH
+ #ifdef __cplusplus
+ extern thread_local int errno;
+ #else
+        """
+        to_patch = os.path.join(sysroot_install_dir, "include", "__errno.h")
+        import tempfile
+        with tempfile.NamedTemporaryFile(mode='w') as f:
+            f.write(errno_patch)
+            f.flush()
+            shell.call(["patch", to_patch, f.name])
 
     @classmethod
     def get_dependencies(cls):
