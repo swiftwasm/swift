@@ -61,6 +61,17 @@ jobs:
           DARWIN_TOOLCHAIN_INSTALLER_CERT_BASE64: ${{ secrets.DARWIN_TOOLCHAIN_INSTALLER_CERT_BASE64 }}
           DARWIN_TOOLCHAIN_INSTALLER_CERT_PASSWORD: ${{ secrets.DARWIN_TOOLCHAIN_INSTALLER_CERT_PASSWORD }}
 
+      - name: Free disk space by removing unused Xcode
+        run: |
+          IN_USE_XCODE=$(xcode-select -p)
+          echo "Removing all Xcode installations except $IN_USE_XCODE"
+          for xcode in /Applications/Xcode*.app; do
+            if [[ $IN_USE_XCODE != "$xcode"* ]]; then
+              echo "Removing $xcode"
+              rm -rf $xcode
+            fi
+          done
+
       - run: ./tools/gh-distribute-toolchain --scheme ${{ inputs.scheme }} --verbose --skip-history ${{ inputs.run-id }}
         working-directory: ./swiftwasm-build
         env:
