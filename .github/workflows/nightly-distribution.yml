@@ -9,8 +9,8 @@ jobs:
       matrix:
         include:
           - scheme: "main"
-          - scheme: "release-5.10"
           - scheme: "release-6.0"
+          - scheme: "release-6.1"
       fail-fast: false
     uses: ./.github/workflows/distribute-toolchain.yml
     secrets: inherit
