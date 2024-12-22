@@ -80,6 +80,8 @@ jobs:
           command: |
             cd swiftwasm-build
             ./tools/gh-distribute-toolchain --scheme ${{ inputs.scheme }} --verbose --skip-history ${{ inputs.run-id }}
+          on_retry_command: |
+            rm -rf "build/Distribution/artifacts"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           BUILDBOT_GITHUB_TOKEN: ${{ secrets.SWIFTWASM_BUILDBOT_TOKEN }}
