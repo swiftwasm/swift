@@ -13,12 +13,6 @@ on:
       override-name:
         type: string
         description: 'Toolchain name'
-      display-name:
-        type: string
-        description: 'Display name for Darwin toolchain'
-      display-name-short:
-        type: string
-        description: 'Short display name for Darwin toolchain'
 jobs:
   manual-distribution:
     uses: ./.github/workflows/distribute-toolchain.yml
@@ -26,6 +20,4 @@ jobs:
     with:
       scheme: ${{ inputs.scheme }}
       run-id: ${{ inputs.run-id }}
-      display-name: ${{ inputs.display-name }}
-      display-name-short: ${{ inputs.display-name-short }}
       override-name: ${{ inputs.override-name }}
