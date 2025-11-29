@@ -21,8 +21,3 @@ If you'd like to track the status of our builds, please refer to our [GitHub Act
 ## Sponsoring
 
 [Become a gold or platinum sponsor](https://github.com/sponsors/swiftwasm/) and contact maintainers to add your logo on our README on Github with a link to your site.
-
-
-<a href="https://www.emergetools.com/">
-  <img src="/assets/sponsors/emergetools.png" width="30%">
-</a>
