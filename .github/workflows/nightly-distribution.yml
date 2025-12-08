@@ -12,6 +12,7 @@ jobs:
           - scheme: "release-6.0"
           - scheme: "release-6.1"
           - scheme: "release-6.2"
+          - scheme: "release-6.3"
 
       fail-fast: false
     uses: ./.github/workflows/distribute-toolchain.yml
