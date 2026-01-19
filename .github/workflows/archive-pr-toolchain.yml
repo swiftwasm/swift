@@ -127,10 +127,7 @@ jobs:
 
           release_tag="swift-pr-${PR_NUMBER}-${MERGE_COMMIT_SHA}"
           release_title="Swift PR #${PR_NUMBER} merge ${MERGE_COMMIT_SHA}"
-          release_notes=$(cat <<'EOF'
-Archived toolchain from swiftlang/swift Jenkins PR build.
-EOF
-)
+          release_notes="Archived toolchain from swiftlang/swift Jenkins PR build."
 
           if ! gh release view "$release_tag" --repo swiftwasm/swift >/dev/null 2>&1; then
             gh release create "$release_tag" \
@@ -141,8 +138,8 @@ EOF
           fi
 
           gh release upload "$release_tag" \
-            artifacts/swift-PR-${PR_NUMBER}-${JENKINS_BUILD_MACOS}-osx.tar.gz \
-            artifacts/swift-PR-${PR_NUMBER}-${JENKINS_BUILD_LINUX}-ubuntu2204.tar.gz \
+            "artifacts/swift-PR-${PR_NUMBER}-${JENKINS_BUILD_MACOS}-osx.tar.gz" \
+            "artifacts/swift-PR-${PR_NUMBER}-${JENKINS_BUILD_LINUX}-ubuntu2204.tar.gz" \
             --repo swiftwasm/swift \
             --clobber
 
