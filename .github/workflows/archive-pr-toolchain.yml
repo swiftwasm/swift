@@ -125,16 +125,17 @@ jobs:
         run: |
           set -euo pipefail
 
-          release_tag="swift-pr-${PR_NUMBER}-${MERGE_COMMIT_SHA}"
-          release_title="Swift PR #${PR_NUMBER} merge ${MERGE_COMMIT_SHA}"
-          release_notes="Archived toolchain from swiftlang/swift Jenkins PR build."
+          release_tag="swift-PR-${PR_NUMBER}-${JENKINS_BUILD_LINUX}"
+          release_title="${release_tag}"
+          release_notes="Archived toolchain from swiftlang/swift Jenkins PR build.\nPR: https://github.com/swiftlang/swift/pull/${PR_NUMBER}"
 
           if ! gh release view "$release_tag" --repo swiftwasm/swift >/dev/null 2>&1; then
             gh release create "$release_tag" \
               --target "$MERGE_COMMIT_SHA" \
               --repo swiftwasm/swift \
               --title "$release_title" \
-              --notes "$release_notes"
+              --notes "$release_notes" \
+              --prerelease
           fi
 
           gh release upload "$release_tag" \
@@ -152,6 +153,8 @@ jobs:
             echo "- swift-PR-${PR_NUMBER}-${JENKINS_BUILD_MACOS}-osx.tar.gz"
             echo "- swift-PR-${PR_NUMBER}-${JENKINS_BUILD_LINUX}-ubuntu2204.tar.gz"
             echo ""
-            echo "Release tag: swift-pr-${PR_NUMBER}-${MERGE_COMMIT_SHA}"
+            echo "Release tag: swift-PR-${PR_NUMBER}-${JENKINS_BUILD_LINUX}"
+            echo "Release: https://github.com/swiftwasm/swift/releases/tag/swift-PR-${PR_NUMBER}-${JENKINS_BUILD_LINUX}"
+            echo "PR: https://github.com/swiftlang/swift/pull/${PR_NUMBER}"
             echo "Statuses source: ${STATUSES_URL}"
           } >> "$GITHUB_STEP_SUMMARY"
