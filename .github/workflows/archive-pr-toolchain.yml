@@ -1,0 +1,160 @@
+name: Archive PR Toolchain
+
+on:
+  workflow_dispatch:
+    inputs:
+      pr-url:
+        required: true
+        type: string
+        description: "swiftlang/swift PR URL (e.g. https://github.com/swiftlang/swift/pull/86624)"
+
+permissions:
+  contents: write
+
+jobs:
+  archive:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Resolve PR number and Jenkins builds
+        run: |
+          set -euo pipefail
+
+          pr_url="${{ inputs.pr-url }}"
+          if [[ "$pr_url" =~ ^https://github.com/swiftlang/swift/pull/([0-9]+)(/.*)?$ ]]; then
+            pr_number="${BASH_REMATCH[1]}"
+          else
+            echo "Input must be a swiftlang/swift PR URL, got: $pr_url" >&2
+            exit 1
+          fi
+
+          pr_payload="$(gh api "/repos/swiftlang/swift/pulls/${pr_number}")"
+          statuses_url="$(echo "$pr_payload" | jq -r '._links.statuses.href')"
+          merge_commit_sha="$(echo "$pr_payload" | jq -r '.merge_commit_sha')"
+          gh api "${statuses_url}?per_page=100" > /tmp/statuses.json
+
+          macos_url="$(jq -r '.[] | select(.target_url != null) | .target_url | select(test("ci\\.swift\\.org/.*/swift-PR-toolchain-[Mm]acos"))' /tmp/statuses.json | head -n1)"
+          linux_url="$(jq -r '.[] | select(.target_url != null) | .target_url | select(test("ci\\.swift\\.org/.*/swift-PR-toolchain-Linux"))' /tmp/statuses.json | head -n1)"
+
+          if [[ -z "$macos_url" ]]; then
+            echo "No Jenkins macOS PR toolchain status found for PR #${pr_number}" >&2
+            jq -r '.[].target_url // empty' /tmp/statuses.json >&2
+            exit 1
+          fi
+          if [[ -z "$linux_url" ]]; then
+            echo "No Jenkins Linux PR toolchain status found for PR #${pr_number}" >&2
+            jq -r '.[].target_url // empty' /tmp/statuses.json >&2
+            exit 1
+          fi
+
+          macos_build="$(echo "$macos_url" | sed -n 's#.*/swift-PR-toolchain-[^/]*/\([0-9]\+\)/.*#\1#p')"
+          linux_build="$(echo "$linux_url" | sed -n 's#.*/swift-PR-toolchain-[^/]*/\([0-9]\+\)/.*#\1#p')"
+          if [[ -z "$macos_build" ]]; then
+            echo "Failed to extract macOS Jenkins build number from ${macos_url}" >&2
+            exit 1
+          fi
+          if [[ -z "$linux_build" ]]; then
+            echo "Failed to extract Linux Jenkins build number from ${linux_url}" >&2
+            exit 1
+          fi
+
+          {
+            echo "PR_NUMBER=${pr_number}"
+            echo "JENKINS_BUILD_MACOS=${macos_build}"
+            echo "JENKINS_BUILD_LINUX=${linux_build}"
+            echo "STATUSES_URL=${statuses_url}"
+            echo "MERGE_COMMIT_SHA=${merge_commit_sha}"
+          } >> "$GITHUB_ENV"
+
+      - name: Download toolchain artifacts
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/downloads
+
+          macos_url="https://download.swift.org/tmp/pull-request/${PR_NUMBER}/${JENKINS_BUILD_MACOS}/xcode/swift-PR-${PR_NUMBER}-${JENKINS_BUILD_MACOS}-osx.tar.gz"
+          ubuntu_url="https://download.swift.org/tmp/pull-request/${PR_NUMBER}/${JENKINS_BUILD_LINUX}/ubuntu2204/PR-ubuntu2204.tar.gz"
+
+          echo "Fetching macOS toolchain from ${macos_url}"
+          curl -fL --retry 5 --retry-delay 10 "$macos_url" -o artifacts/downloads/macos.tar.gz
+
+          echo "Fetching Ubuntu toolchain from ${ubuntu_url}"
+          curl -fL --retry 5 --retry-delay 10 "$ubuntu_url" -o artifacts/downloads/ubuntu2204.tar.gz
+
+      - name: Repackage macOS toolchain
+        run: |
+          set -euo pipefail
+          workdir="$(mktemp -d)"
+          trap 'rm -rf "$workdir"' EXIT
+
+          tar -xf artifacts/downloads/macos.tar.gz -C "$workdir"
+          toolchain_dir="$workdir/Library/Developer/Toolchains/swift-PR-${PR_NUMBER}-${JENKINS_BUILD_MACOS}.xctoolchain"
+          if [[ ! -d "$toolchain_dir" ]]; then
+            echo "Expected toolchain not found at ${toolchain_dir}" >&2
+            echo "Available entries:" >&2
+            find "$workdir" -maxdepth 3 -type d >&2
+            exit 1
+          fi
+
+          mkdir -p artifacts
+          tar -czf "artifacts/swift-PR-${PR_NUMBER}-${JENKINS_BUILD_MACOS}-osx.tar.gz" -C "$(dirname "$toolchain_dir")" "$(basename "$toolchain_dir")"
+
+      - name: Repackage Ubuntu toolchain
+        run: |
+          set -euo pipefail
+          workdir="$(mktemp -d)"
+          trap 'rm -rf "$workdir"' EXIT
+
+          extracted="$workdir/extracted"
+          tagged="$workdir/tagged"
+          mkdir -p "$extracted" "$tagged"
+
+          tar -xf artifacts/downloads/ubuntu2204.tar.gz -C "$extracted"
+          tag="swift-PR-${PR_NUMBER}-${JENKINS_BUILD_LINUX}"
+
+          # Mimic repackage-pr-toolchain.rb: move all extracted entries under the tag name before archiving.
+          mkdir -p "$tagged/$tag"
+          shopt -s dotglob
+          for entry in "$extracted"/*; do
+            mv "$entry" "$tagged/$tag/"
+          done
+
+          tar -czf "artifacts/${tag}-ubuntu2204.tar.gz" -C "$tagged" "$tag"
+
+      - name: Publish release assets to swiftwasm/swift
+        run: |
+          set -euo pipefail
+
+          release_tag="swift-pr-${PR_NUMBER}-${MERGE_COMMIT_SHA}"
+          release_title="Swift PR #${PR_NUMBER} merge ${MERGE_COMMIT_SHA}"
+          release_notes=$(cat <<'EOF'
+Archived toolchain from swiftlang/swift Jenkins PR build.
+EOF
+)
+
+          if ! gh release view "$release_tag" --repo swiftwasm/swift >/dev/null 2>&1; then
+            gh release create "$release_tag" \
+              --target "$MERGE_COMMIT_SHA" \
+              --repo swiftwasm/swift \
+              --title "$release_title" \
+              --notes "$release_notes"
+          fi
+
+          gh release upload "$release_tag" \
+            artifacts/swift-PR-${PR_NUMBER}-${JENKINS_BUILD_MACOS}-osx.tar.gz \
+            artifacts/swift-PR-${PR_NUMBER}-${JENKINS_BUILD_LINUX}-ubuntu2204.tar.gz \
+            --repo swiftwasm/swift \
+            --clobber
+
+      - name: Summarize
+        run: |
+          {
+            echo "Archived Swift PR #${PR_NUMBER} on merge commit ${MERGE_COMMIT_SHA} (Jenkins builds: macOS ${JENKINS_BUILD_MACOS}, Linux ${JENKINS_BUILD_LINUX})."
+            echo ""
+            echo "Artifacts:"
+            echo "- swift-PR-${PR_NUMBER}-${JENKINS_BUILD_MACOS}-osx.tar.gz"
+            echo "- swift-PR-${PR_NUMBER}-${JENKINS_BUILD_LINUX}-ubuntu2204.tar.gz"
+            echo ""
+            echo "Release tag: swift-pr-${PR_NUMBER}-${MERGE_COMMIT_SHA}"
+            echo "Statuses source: ${STATUSES_URL}"
+          } >> "$GITHUB_STEP_SUMMARY"
