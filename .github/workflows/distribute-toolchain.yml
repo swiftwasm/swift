@@ -28,7 +28,7 @@ jobs:
           if [[ -n "${{ github.event.inputs.override-name }}" ]]; then
             echo "GH_DISTRIBUTE_TOOLCHAIN_OVERRIDE_NAME=${{ github.event.inputs.override-name }}" >> $GITHUB_ENV
           fi
-      - uses: nick-fields/retry@v3
+      - uses: nick-fields/retry@v4
         with:
           timeout_minutes: 180
           max_attempts: 3
