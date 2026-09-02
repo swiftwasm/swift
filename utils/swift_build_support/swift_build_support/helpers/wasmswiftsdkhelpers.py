@@ -62,7 +62,7 @@ def install_stdlib_and_resources(cmake_path, stdlib_build_path,
 def build_libxml2(args, toolchain, source_dir, build_dir,
                   swift_host_triple, clang_multiarch_triple,
                   has_pthread, sysroot,
-                  append_platform_cmake_options):
+                  append_platform_cmake_options, extra_c_flags=[]):
     """Build libxml2 for a WebAssembly target and install into *sysroot*."""
     libxml2 = CMakeProduct(
         args=args,
@@ -70,7 +70,7 @@ def build_libxml2(args, toolchain, source_dir, build_dir,
         source_dir=os.path.join(
             os.path.dirname(source_dir), 'libxml2'),
         build_dir=os.path.join(build_dir, 'libxml2', swift_host_triple))
-    append_platform_cmake_options(libxml2.cmake_options, [])
+    append_platform_cmake_options(libxml2.cmake_options, [], extra_c_flags)
     libxml2.cmake_options.define('LIBXML2_WITH_C14N', 'FALSE')
     libxml2.cmake_options.define('LIBXML2_WITH_CATALOG', 'FALSE')
     libxml2.cmake_options.define('LIBXML2_WITH_DEBUG', 'FALSE')
@@ -132,7 +132,8 @@ def build_libxml2(args, toolchain, source_dir, build_dir,
 def build_foundation(args, toolchain, source_dir, build_dir,
                      swift_host_triple, clang_multiarch_triple,
                      sysroot, dest_dir, host_toolchain_path,
-                     append_platform_cmake_options):
+                     append_platform_cmake_options,
+                     extra_swift_flags=[], extra_c_flags=[]):
     """Build swift-corelibs-foundation and install into *dest_dir*."""
     source_root = os.path.dirname(source_dir)
 
@@ -141,7 +142,8 @@ def build_foundation(args, toolchain, source_dir, build_dir,
         toolchain=toolchain,
         source_dir=os.path.join(source_root, 'swift-corelibs-foundation'),
         build_dir=os.path.join(build_dir, 'foundation', swift_host_triple))
-    append_platform_cmake_options(foundation.cmake_options, [])
+    append_platform_cmake_options(foundation.cmake_options,
+                                  extra_swift_flags, extra_c_flags)
     foundation.cmake_options.define('BUILD_SHARED_LIBS', 'FALSE')
     foundation.cmake_options.define('FOUNDATION_BUILD_TOOLS', 'FALSE')
     foundation.cmake_options.define(

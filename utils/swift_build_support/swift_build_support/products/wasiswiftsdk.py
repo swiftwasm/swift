@@ -41,7 +41,8 @@ class WASISwiftSDK(product.Product):
 
     def _append_platform_cmake_options(self, cmake_options,
                                        swift_host_triple, has_pthread,
-                                       sysroot, extra_swift_flags):
+                                       sysroot, extra_swift_flags,
+                                       extra_c_flags):
         cmake_options.define('CMAKE_SYSTEM_NAME:STRING', 'WASI')
         cmake_options.define('CMAKE_SYSTEM_PROCESSOR:STRING', 'wasm32')
         cmake_options.define('CMAKE_C_COMPILER_TARGET', swift_host_triple)
@@ -58,7 +59,7 @@ class WASISwiftSDK(product.Product):
 
         swift_flags = ['-sdk', sysroot, '-resource-dir',
                        swift_resource_dir] + extra_swift_flags
-        c_flags = ['-resource-dir', clang_resource_dir]
+        c_flags = ['-resource-dir', clang_resource_dir] + extra_c_flags
         cxx_flags = c_flags + ['-fno-exceptions']
         if has_pthread:
             clang_flags = ['-mthread-model', 'posix', '-pthread']
@@ -82,6 +83,43 @@ class WASISwiftSDK(product.Product):
                 native_toolchain_path, 'bin', 'llvm-ar'))
             cmake_options.define('CMAKE_RANLIB', os.path.join(
                 native_toolchain_path, 'bin', 'llvm-ranlib'))
+
+        if self.args.wasi_swift_sdk_lto is not None:
+            # LTO builds emit LLVM bitcode object files. The host's GNU 'ar'
+            # cannot index them (its LTO plugin is built against a different
+            # LLVM version), which silently produces archives with an
+            # incomplete symbol table, so use the LLVM archiver instead.
+            llvm_tools_path = self.args.native_llvm_tools_path
+            if llvm_tools_path:
+                cmake_options.define('CMAKE_AR', os.path.join(
+                    llvm_tools_path, 'llvm-ar'))
+                cmake_options.define('CMAKE_RANLIB', os.path.join(
+                    llvm_tools_path, 'llvm-ranlib'))
+            # CMake's Swift split-compilation model (policy CMP0157 NEW) drives
+            # the compiler with an output-file-map that only names 'object'
+            # outputs; under '-lto=' the driver emits '<basename>.bc' files in
+            # the working directory instead and the build fails. Ask the
+            # Foundation projects to keep the one-step compile-and-archive
+            # model, where the driver names its own outputs.
+            cmake_options.define(
+                'FOUNDATION_DISABLE_SWIFT_SPLIT_COMPILATION:BOOL', 'TRUE')
+
+    def _foundation_stack_lto_flags(self):
+        """Return the extra Swift and C/C++ flags requesting LTO for the
+        Foundation stack, as configured by '--wasi-swift-sdk-lto' and
+        '--wasi-swift-sdk-hermetic-seal-at-link'.
+
+        The standard library's SWIFT_STDLIB_ENABLE_LTO does not reach these
+        libraries because they are built as standalone CMake projects.
+        """
+        lto_type = self.args.wasi_swift_sdk_lto
+        if lto_type is None:
+            return [], []
+
+        swift_flags = ['-lto=llvm-{}'.format(lto_type)]
+        if self.args.wasi_swift_sdk_hermetic_seal_at_link:
+            swift_flags.append('-experimental-hermetic-seal-at-link')
+        return swift_flags, ['-flto={}'.format(lto_type)]
 
     def build(self, host_target):
         build_root = os.path.dirname(self.build_dir)
@@ -123,24 +161,30 @@ class WASISwiftSDK(product.Product):
 
             # Create a closure capturing WASI-specific platform config.
             def append_cmake_opts(cmake_options, extra_swift_flags,
+                                  extra_c_flags=[],
                                   _triple=swift_host_triple,
                                   _pthread=has_pthread,
                                   _sysroot=sysroot):
                 self._append_platform_cmake_options(
                     cmake_options, _triple, _pthread,
-                    _sysroot, extra_swift_flags)
+                    _sysroot, extra_swift_flags, extra_c_flags)
 
             host_toolchain_path = self.native_toolchain_path(
                 self.args.host_target)
 
+            lto_swift_flags, lto_c_flags = self._foundation_stack_lto_flags()
+
             helpers.build_libxml2(
                 self.args, self.toolchain, self.source_dir, self.build_dir,
                 swift_host_triple, clang_multiarch_triple,
-                has_pthread, sysroot, append_cmake_opts)
+                has_pthread, sysroot, append_cmake_opts,
+                extra_c_flags=lto_c_flags)
             helpers.build_foundation(
                 self.args, self.toolchain, self.source_dir, self.build_dir,
                 swift_host_triple, clang_multiarch_triple,
-                sysroot, dest_dir, host_toolchain_path, append_cmake_opts)
+                sysroot, dest_dir, host_toolchain_path, append_cmake_opts,
+                extra_swift_flags=lto_swift_flags,
+                extra_c_flags=lto_c_flags)
             helpers.build_swift_testing(
                 self.args, self.toolchain, self.source_dir, self.build_dir,
                 swift_host_triple, dest_dir, append_cmake_opts)

@@ -302,6 +302,14 @@ def _apply_default_arguments(args):
         args.test_xros_host = False
         args.test_android_host = False
 
+    # The Foundation stack of the WASI Swift SDK can only be sealed at link
+    # when it is also compiled to bitcode: the frontend rejects
+    # -experimental-hermetic-seal-at-link without an -lto= mode.
+    if args.wasi_swift_sdk_hermetic_seal_at_link and \
+            args.wasi_swift_sdk_lto is None:
+        raise ValueError('error: --wasi-swift-sdk-hermetic-seal-at-link '
+                         'requires --wasi-swift-sdk-lto')
+
 
 def create_argument_parser():
     """Return a configured argument parser."""
@@ -899,6 +907,20 @@ def create_argument_parser():
            help='build WasmKit')
     option(['--install-wasmkit'], toggle_true('install_wasmkit'),
            help='install SourceKitLSP')
+    option('--wasi-swift-sdk-lto', store('wasi_swift_sdk_lto'),
+           choices=['full', 'thin'],
+           default=None,
+           metavar='LTO_TYPE',
+           help='use lto optimization when building the Swift and C parts '
+                'of the WASI Swift SDK\'s Foundation stack. The standard '
+                'library is configured separately through the '
+                'SWIFT_STDLIB_ENABLE_LTO CMake option. Options: full, thin')
+    option('--wasi-swift-sdk-hermetic-seal-at-link',
+           toggle_true('wasi_swift_sdk_hermetic_seal_at_link'),
+           help='compile the Foundation stack of the WASI Swift SDK with '
+                '-experimental-hermetic-seal-at-link, allowing the linker '
+                'to strip unused code and metadata from the final '
+                'executable. Requires --wasi-swift-sdk-lto')
 
     # Emscripten options
 

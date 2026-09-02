@@ -49,7 +49,7 @@ class EmscriptenSwiftSDK(product.Product):
 
     def _append_platform_cmake_options(self, cmake_options,
                                        swift_host_triple, sysroot,
-                                       extra_swift_flags):
+                                       extra_swift_flags, extra_c_flags):
         cmake_options.define('CMAKE_SYSTEM_NAME:STRING', 'Emscripten')
         cmake_options.define('CMAKE_SYSTEM_PROCESSOR:STRING', 'wasm32')
         cmake_options.define('CMAKE_C_COMPILER_TARGET', swift_host_triple)
@@ -66,7 +66,7 @@ class EmscriptenSwiftSDK(product.Product):
 
         swift_flags = ['-sdk', sysroot, '-resource-dir',
                        swift_resource_dir] + extra_swift_flags
-        c_flags = ['-resource-dir', clang_resource_dir]
+        c_flags = ['-resource-dir', clang_resource_dir] + extra_c_flags
         cxx_flags = c_flags + ['-fno-exceptions']
 
         # Emscripten keeps compatibility headers (e.g. xlocale.h) in a
@@ -122,10 +122,12 @@ class EmscriptenSwiftSDK(product.Product):
         # to be uncommented when the porting work is done.
 
         def append_cmake_opts(cmake_options, extra_swift_flags,
+                              extra_c_flags=[],
                               _triple=swift_host_triple,
                               _sysroot=sysroot):
             self._append_platform_cmake_options(
-                cmake_options, _triple, _sysroot, extra_swift_flags)
+                cmake_options, _triple, _sysroot,
+                extra_swift_flags, extra_c_flags)
 
         host_toolchain_path = self.native_toolchain_path(
             self.args.host_target)
